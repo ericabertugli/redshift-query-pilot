@@ -106,7 +106,6 @@ def sync_glue(conn, database):
                     "storage_format": detect_storage_format(table_def),
                     "description": table_def.get("Description"),
                     "columns": [],
-                    "partition_keys": set(),
                 }
 
                 for i, col in enumerate(sd.get("Columns", []), start=1):

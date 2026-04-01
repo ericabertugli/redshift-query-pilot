@@ -255,19 +255,19 @@ def sync_redshift(conn, host, cluster, database, db_user, region, login_url, aut
     for redshift_schema, glue_database, esoptions in rs_schema_mappings:
         try:
             # Parse region from esoptions if available (format: key=value, key=value)
-            region = None
-            catalog = None
+            mapping_region = None
+            catalog_id = None
             if esoptions:
                 for opt in esoptions.split(","):
                     opt = opt.strip()
                     if opt.startswith("region="):
-                        region = opt.split("=", 1)[1]
+                        mapping_region = opt.split("=", 1)[1]
                     elif opt.startswith("catalog_id="):
-                        catalog = opt.split("=", 1)[1]
+                        catalog_id = opt.split("=", 1)[1]
             db_cursor.execute(
                 """INSERT INTO schema_mappings (glue_database, redshift_schema, catalog_name, region)
                    VALUES (?, ?, ?, ?)""",
-                (glue_database, redshift_schema, catalog, region),
+                (glue_database, redshift_schema, catalog_id, mapping_region),
             )
             mapping_count += 1
             logger.debug("Synced schema mapping: %s -> %s", glue_database, redshift_schema)

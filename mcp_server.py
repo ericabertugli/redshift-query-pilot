@@ -184,9 +184,12 @@ def list_partition_keys(table_name: str, database_name: str | None = None) -> st
 
         if not rows:
             # Check if table exists but has no partition keys
-            cursor = conn.execute(
-                "SELECT 1 FROM tables WHERE table_name = ?", (table_name,)
-            )
+            exist_query = "SELECT 1 FROM tables WHERE table_name = ?"
+            exist_params = [table_name]
+            if database_name:
+                exist_query += " AND database_name = ?"
+                exist_params.append(database_name)
+            cursor = conn.execute(exist_query, exist_params)
             exists = cursor.fetchone()
 
             if exists:

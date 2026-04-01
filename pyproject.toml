@@ -1,0 +1,17 @@
+[project]
+name = "schema-sync"
+version = "0.1.0"
+description = "Sync AWS Glue and Redshift table schemas into a local SQLite catalog"
+requires-python = ">=3.10"
+dependencies = [
+    "boto3>=1.28.0",
+    "redshift-connector>=2.0.0",
+    "requests>=2.28.0",
+    "beautifulsoup4>=4.11.0",
+    "lxml>=4.9.0",
+    "mcp>=1.0.0",
+]
+
+[project.scripts]
+schema-sync = "sync_catalog:main"
+schema-catalog-mcp = "mcp_server:main"

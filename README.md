@@ -200,6 +200,7 @@ AI: [Looks up schema for orders table]
 | `list_partition_keys` | List partition keys for a table with optimization tips |
 | `find_columns` | Find tables containing a specific column name |
 | `get_schema_mapping` | Get mapping between Glue databases and Redshift external schemas |
+| `run_query` | Execute a SQL query against Redshift and return results (SELECT, CTEs, CREATE TEMP TABLE) |
 
 ### Schema Sources
 
@@ -228,3 +229,43 @@ sqlite3 catalog.db "
 |----------|-------------|---------|
 | `CATALOG_DB_PATH` | Path to the SQLite catalog database | `./catalog.db` (relative to `mcp_server.py`) |
 | `MCP_TOOL_TIMEOUT` | Timeout in seconds for tool operations | `30` |
+| `REDSHIFT_HOST` | Redshift cluster endpoint (required for `run_query`) | - |
+| `REDSHIFT_CLUSTER` | Redshift cluster identifier (required for `run_query`) | - |
+| `REDSHIFT_DATABASE` | Redshift database name (required for `run_query`) | - |
+| `REDSHIFT_USER` | Redshift username for SAML auth (required for `run_query`) | - |
+| `REDSHIFT_REGION` | AWS region | `eu-west-1` |
+| `REDSHIFT_LOGIN_URL` | SAML IdP login URL (required for `run_query`) | - |
+| `REDSHIFT_QUERY_TIMEOUT` | Query execution timeout in seconds | `60` |
+| `REDSHIFT_MAX_ROWS` | Default max rows returned by `run_query` | `1000` |
+
+### Enabling Query Execution
+
+To use the `run_query` tool, pass the Redshift connection env vars when configuring the MCP server:
+
+#### Claude Code
+
+```bash
+claude mcp add schema-catalog --scope user -e REDSHIFT_HOST=<host> -e REDSHIFT_CLUSTER=<cluster> -e REDSHIFT_DATABASE=<database> -e REDSHIFT_USER=<user> -e REDSHIFT_LOGIN_URL=<saml-url> -- uv run --directory /path/to/redshift-query-pilot python mcp_server.py
+```
+
+#### GitHub Copilot (CLI)
+
+```json
+{
+  "mcpServers": {
+    "schema-catalog": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/redshift-query-pilot", "python", "mcp_server.py"],
+      "env": {
+        "REDSHIFT_HOST": "your-cluster.region.redshift.amazonaws.com",
+        "REDSHIFT_CLUSTER": "your-cluster-id",
+        "REDSHIFT_DATABASE": "your_db",
+        "REDSHIFT_USER": "your_user",
+        "REDSHIFT_LOGIN_URL": "https://your-idp.com/saml/login"
+      }
+    }
+  }
+}
+```
+
+> **Note**: If you don't set the Redshift env vars, the schema catalog tools (search, schema lookup, etc.) still work — only `run_query` requires a live Redshift connection.

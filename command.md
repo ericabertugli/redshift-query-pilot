@@ -11,6 +11,7 @@ Use the MCP schema-catalog tools to look up table schemas before writing queries
 - `list_partition_keys` - Find partition columns (critical for Spectrum)
 - `find_columns` - Find tables containing a specific column
 - `get_schema_mapping` - Get mapping between Glue databases and Redshift schemas
+- `run_query` - Execute a SQL query against Redshift and return results
 
 **Always look up schemas before writing queries.** Never assume table or column names.
 
@@ -436,7 +437,18 @@ JOIN spectrum.events s ON r.id = s.id;
 3. **Get schemas**: Use `get_table_schema` for relevant tables
 4. **Check partitions**: Use `list_partition_keys` for Spectrum tables
 5. **Write query**: Apply all best practices above
-6. **Explain**: Briefly note any optimization choices made
+6. **Run query**: Use `run_query` to execute the SQL and return results to the user
+7. **Explain**: Briefly note any optimization choices made
+
+## Query Execution
+
+Use `run_query(sql)` to execute queries against Redshift. Rules:
+
+- **Allowed**: `SELECT`, `WITH` (CTEs), `SHOW`, `EXPLAIN`, `CREATE TEMP TABLE`
+- **Blocked**: `INSERT`, `UPDATE`, `DELETE`, `DROP`, `ALTER` on permanent objects
+- Results are capped at 1000 rows by default (pass `max_rows` to override, max 5000)
+- Always apply partition filters and `LIMIT` during exploration to control costs
+- If the user asks to **run** or **execute** a query, use `run_query` instead of just writing the SQL
 
 ## Example Workflow
 
@@ -446,3 +458,4 @@ User: "Get daily order counts for January 2024"
 2. Schema: `get_table_schema("orders")`
 3. Partitions: `list_partition_keys("orders")`
 4. Write optimized query with partition filters
+5. Execute: `run_query("SELECT ...")`

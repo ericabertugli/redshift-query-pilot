@@ -21,6 +21,7 @@ RS_CLUSTER = os.environ.get("REDSHIFT_CLUSTER", "")
 RS_DATABASE = os.environ.get("REDSHIFT_DATABASE", "")
 RS_USER = os.environ.get("REDSHIFT_USER", "")
 RS_REGION = os.environ.get("REDSHIFT_REGION", "eu-west-1")
+RS_PASSWORD = os.environ.get("REDSHIFT_PASSWORD", "")
 RS_LOGIN_URL = os.environ.get("REDSHIFT_LOGIN_URL", "")
 RS_QUERY_TIMEOUT = int(os.environ.get("REDSHIFT_QUERY_TIMEOUT", 60))
 RS_MAX_ROWS = int(os.environ.get("REDSHIFT_MAX_ROWS", 1000))
@@ -33,7 +34,7 @@ _ALLOWED_SQL_RE = re.compile(
 
 mcp = FastMCP("schema-catalog")
 
-# Cached Redshift connection (reused across tool calls to avoid repeated Okta auth)
+# Cached Redshift connection (reused across tool calls to avoid repeated auth)
 _redshift_conn = None
 
 
@@ -329,33 +330,51 @@ def find_columns(column_name: str, source: str | None = None) -> str:
 
 
 def _create_redshift_connection():
-    """Create a new Redshift connection using Browser SAML auth."""
-    missing = [
-        name
-        for name, val in [
-            ("REDSHIFT_HOST", RS_HOST),
-            ("REDSHIFT_CLUSTER", RS_CLUSTER),
-            ("REDSHIFT_DATABASE", RS_DATABASE),
-            ("REDSHIFT_USER", RS_USER),
-            ("REDSHIFT_LOGIN_URL", RS_LOGIN_URL),
-        ]
-        if not val
+    """Create a new Redshift connection.
+
+    Uses Browser SAML auth when REDSHIFT_LOGIN_URL is set,
+    otherwise falls back to username/password authentication.
+    """
+    use_saml = bool(RS_LOGIN_URL)
+
+    common_required = [
+        ("REDSHIFT_HOST", RS_HOST),
+        ("REDSHIFT_DATABASE", RS_DATABASE),
+        ("REDSHIFT_USER", RS_USER),
     ]
+    saml_required = [
+        ("REDSHIFT_CLUSTER", RS_CLUSTER),
+    ]
+    password_required = [
+        ("REDSHIFT_PASSWORD", RS_PASSWORD),
+    ]
+
+    required = common_required + (saml_required if use_saml else password_required)
+    missing = [name for name, val in required if not val]
     if missing:
         raise ValueError(
             f"Missing required env vars for Redshift connection: {', '.join(missing)}"
         )
 
+    if use_saml:
+        return redshift_connector.connect(
+            iam=True,
+            host=RS_HOST,
+            port=5439,
+            cluster_identifier=RS_CLUSTER,
+            database=RS_DATABASE,
+            db_user=RS_USER,
+            region=RS_REGION,
+            credentials_provider="BrowserSamlCredentialsProvider",
+            login_url=RS_LOGIN_URL,
+        )
+
     return redshift_connector.connect(
-        iam=True,
         host=RS_HOST,
         port=5439,
-        cluster_identifier=RS_CLUSTER,
         database=RS_DATABASE,
-        db_user=RS_USER,
-        region=RS_REGION,
-        credentials_provider="BrowserSamlCredentialsProvider",
-        login_url=RS_LOGIN_URL,
+        user=RS_USER,
+        password=RS_PASSWORD,
     )
 
 
@@ -363,7 +382,7 @@ def _get_redshift_connection():
     """Get or create a cached Redshift connection.
 
     Reuses an existing connection if available and healthy,
-    otherwise creates a new one (which triggers browser auth).
+    otherwise creates a new one (which triggers browser auth if using SAML).
     """
     global _redshift_conn
 

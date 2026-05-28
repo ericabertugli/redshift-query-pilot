@@ -33,6 +33,9 @@ _ALLOWED_SQL_RE = re.compile(
 
 mcp = FastMCP("schema-catalog")
 
+# Cached Redshift connection (reused across tool calls to avoid repeated Okta auth)
+_redshift_conn = None
+
 
 class ToolTimeoutError(Exception):
     """Raised when a tool operation times out."""
@@ -325,8 +328,8 @@ def find_columns(column_name: str, source: str | None = None) -> str:
     return "\n".join(results)
 
 
-def _get_redshift_connection():
-    """Create a Redshift connection using Browser SAML auth."""
+def _create_redshift_connection():
+    """Create a new Redshift connection using Browser SAML auth."""
     missing = [
         name
         for name, val in [
@@ -354,6 +357,47 @@ def _get_redshift_connection():
         credentials_provider="BrowserSamlCredentialsProvider",
         login_url=RS_LOGIN_URL,
     )
+
+
+def _get_redshift_connection():
+    """Get or create a cached Redshift connection.
+
+    Reuses an existing connection if available and healthy,
+    otherwise creates a new one (which triggers browser auth).
+    """
+    global _redshift_conn
+
+    # Check if we have a cached connection and it's still alive
+    if _redshift_conn is not None:
+        try:
+            # Quick health check - execute a simple query
+            cursor = _redshift_conn.cursor()
+            cursor.execute("SELECT 1")
+            cursor.fetchone()
+            cursor.close()
+            return _redshift_conn
+        except Exception:
+            # Connection is dead, close it and create a new one
+            try:
+                _redshift_conn.close()
+            except Exception:
+                pass
+            _redshift_conn = None
+
+    # Create a new connection (this will trigger browser auth)
+    _redshift_conn = _create_redshift_connection()
+    return _redshift_conn
+
+
+def _close_redshift_connection():
+    """Close the cached Redshift connection."""
+    global _redshift_conn
+    if _redshift_conn is not None:
+        try:
+            _redshift_conn.close()
+        except Exception:
+            pass
+        _redshift_conn = None
 
 
 def _validate_sql(sql: str) -> None:
@@ -404,6 +448,9 @@ def run_query(sql: str, max_rows: int | None = None) -> str:
     Only SELECT, WITH (CTE), SHOW, EXPLAIN, and CREATE TEMP TABLE statements
     are allowed. DML on permanent tables is blocked.
 
+    The connection is cached and reused across calls to avoid repeated
+    browser authentication.
+
     Args:
         sql: The SQL query to execute
         max_rows: Maximum rows to return (default from REDSHIFT_MAX_ROWS env var, max 5000)
@@ -414,8 +461,8 @@ def run_query(sql: str, max_rows: int | None = None) -> str:
     _validate_sql(sql)
     row_limit = min(max_rows or RS_MAX_ROWS, 5000)
 
-    conn = _get_redshift_connection()
     try:
+        conn = _get_redshift_connection()
         cursor = conn.cursor()
         cursor.execute(sql)
 
@@ -431,9 +478,9 @@ def run_query(sql: str, max_rows: int | None = None) -> str:
 
         return _format_results(columns, rows, truncated)
     except Exception as e:
+        # On error, close the connection so next call creates a fresh one
+        _close_redshift_connection()
         return f"Query error: {e}"
-    finally:
-        conn.close()
 
 
 def main():

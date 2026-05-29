@@ -3,16 +3,11 @@
 
 import argparse
 import logging
-import signal
 import sqlite3
 
 import boto3
-import redshift_connector
 
-
-class SamlAuthTimeout(Exception):
-    """Raised when SAML authentication times out."""
-    pass
+from redshift_conn import connect_password, connect_saml
 
 logger = logging.getLogger(__name__)
 
@@ -160,30 +155,27 @@ def sync_glue(conn, database):
     logger.info("Glue sync complete: %d tables", len(tables_data))
 
 
-def sync_redshift(conn, host, cluster, database, db_user, region, login_url, auth_timeout=120):
+def sync_redshift(conn, host, cluster, database, db_user, region, login_url, password=None, auth_timeout=120):
     """Sync all table schemas from Redshift."""
     logger.info("Starting Redshift sync for cluster=%s database=%s user=%s", cluster, database, db_user)
 
-    def timeout_handler(signum, frame):
-        raise SamlAuthTimeout(f"SAML authentication timed out after {auth_timeout} seconds")
-
-    old_handler = signal.signal(signal.SIGALRM, timeout_handler)
-    signal.alarm(auth_timeout)
-    try:
-        rs_conn = redshift_connector.connect(
-            iam=True,
+    if login_url:
+        rs_conn = connect_saml(
             host=host,
-            port=5439,
-            cluster_identifier=cluster,
+            cluster=cluster,
             database=database,
-            db_user=db_user,
-            region=region,
-            credentials_provider="BrowserSamlCredentialsProvider",
+            user=db_user,
             login_url=login_url,
+            region=region,
+            auth_timeout=auth_timeout,
         )
-    finally:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, old_handler)
+    else:
+        rs_conn = connect_password(
+            host=host,
+            database=database,
+            user=db_user,
+            password=password or "",
+        )
 
     try:
         cursor = rs_conn.cursor()
@@ -290,7 +282,10 @@ def main():
     parser.add_argument("--redshift-database", help="Redshift database name (required unless --skip-redshift)")
     parser.add_argument("--redshift-user", help="Redshift db_user (required unless --skip-redshift)")
     parser.add_argument("--redshift-region", default="eu-west-1", help="AWS region (default: eu-west-1)")
-    parser.add_argument("--redshift-login-url", help="SAML IdP login URL for browser-based auth (required unless --skip-redshift)")
+    # Auth approach 1 (SAML): --redshift-login-url triggers browser-based IdP auth
+    # Auth approach 2 (User/Password): --redshift-password for direct connection
+    parser.add_argument("--redshift-login-url", help="SAML IdP login URL for browser-based auth")
+    parser.add_argument("--redshift-password", help="Redshift password for user/password auth")
     parser.add_argument("--saml-timeout", type=int, default=120,
                         help="Timeout in seconds for SAML authentication (default: 120)")
     args = parser.parse_args()
@@ -302,16 +297,18 @@ def main():
         missing = []
         if not args.redshift_host:
             missing.append("--redshift-host")
-        if not args.redshift_cluster:
-            missing.append("--redshift-cluster")
         if not args.redshift_database:
             missing.append("--redshift-database")
         if not args.redshift_user:
             missing.append("--redshift-user")
-        if not args.redshift_login_url:
-            missing.append("--redshift-login-url")
         if missing:
             parser.error(f"The following arguments are required unless --skip-redshift is set: {', '.join(missing)}")
+        # Require either SAML or password auth
+        if not args.redshift_login_url and not args.redshift_password:
+            parser.error("Either --redshift-login-url (SAML) or --redshift-password is required unless --skip-redshift is set")
+        # SAML requires cluster identifier
+        if args.redshift_login_url and not args.redshift_cluster:
+            parser.error("--redshift-cluster is required when using SAML auth (--redshift-login-url)")
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
@@ -326,7 +323,7 @@ def main():
             sync_redshift(conn, args.redshift_host, args.redshift_cluster,
                           args.redshift_database, args.redshift_user,
                           args.redshift_region, args.redshift_login_url,
-                          args.saml_timeout)
+                          args.redshift_password, args.saml_timeout)
     finally:
         conn.close()
 

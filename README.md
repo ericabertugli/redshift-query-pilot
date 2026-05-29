@@ -271,7 +271,7 @@ claude mcp add schema-catalog --scope user -e REDSHIFT_HOST=<host> -e REDSHIFT_C
         "REDSHIFT_CLUSTER": "your-cluster-id",
         "REDSHIFT_DATABASE": "your_db",
         "REDSHIFT_USER": "your_user",
-        "REDSHIFT_LOGIN_URL": "https://your-idp.com/saml/login", // only for SAML
+        "REDSHIFT_LOGIN_URL": "https://your-idp.com/saml/login",
         "REDSHIFT_PASSWORD": "your_password"
       }
     }

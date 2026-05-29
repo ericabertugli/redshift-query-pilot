@@ -8,8 +8,9 @@ import signal
 from functools import wraps
 from pathlib import Path
 
-import redshift_connector
 from mcp.server.fastmcp import FastMCP
+
+from redshift_conn import connect_password, connect_saml
 
 DB_PATH = os.environ.get("CATALOG_DB_PATH", Path(__file__).parent / "catalog.db")
 # Timeout in seconds for tool operations (default: 30 seconds)
@@ -330,11 +331,7 @@ def find_columns(column_name: str, source: str | None = None) -> str:
 
 
 def _create_redshift_connection():
-    """Create a new Redshift connection.
-
-    Uses Browser SAML auth when REDSHIFT_LOGIN_URL is set,
-    otherwise falls back to username/password authentication.
-    """
+    """Create a new Redshift connection, validating required env vars first."""
     use_saml = bool(RS_LOGIN_URL)
 
     common_required = [
@@ -342,12 +339,8 @@ def _create_redshift_connection():
         ("REDSHIFT_DATABASE", RS_DATABASE),
         ("REDSHIFT_USER", RS_USER),
     ]
-    saml_required = [
-        ("REDSHIFT_CLUSTER", RS_CLUSTER),
-    ]
-    password_required = [
-        ("REDSHIFT_PASSWORD", RS_PASSWORD),
-    ]
+    saml_required = [("REDSHIFT_CLUSTER", RS_CLUSTER)]
+    password_required = [("REDSHIFT_PASSWORD", RS_PASSWORD)]
 
     required = common_required + (saml_required if use_saml else password_required)
     missing = [name for name, val in required if not val]
@@ -357,21 +350,17 @@ def _create_redshift_connection():
         )
 
     if use_saml:
-        return redshift_connector.connect(
-            iam=True,
+        return connect_saml(
             host=RS_HOST,
-            port=5439,
-            cluster_identifier=RS_CLUSTER,
+            cluster=RS_CLUSTER,
             database=RS_DATABASE,
-            db_user=RS_USER,
-            region=RS_REGION,
-            credentials_provider="BrowserSamlCredentialsProvider",
+            user=RS_USER,
             login_url=RS_LOGIN_URL,
+            region=RS_REGION,
         )
 
-    return redshift_connector.connect(
+    return connect_password(
         host=RS_HOST,
-        port=5439,
         database=RS_DATABASE,
         user=RS_USER,
         password=RS_PASSWORD,

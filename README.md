@@ -67,14 +67,14 @@ uv sync
 
 Run `sync_catalog.py` to fetch table schemas from AWS Glue and Redshift:
 
+**Option 1: SAML (browser-based auth)**
 ```bash
-uv run python sync_catalog.py \
-  --glue-database <your-glue-database> \
-  --redshift-host <host> \
-  --redshift-cluster <your-cluster> \
-  --redshift-database <your-database> \
-  --redshift-user <your-username> \
-  --redshift-login-url <your-saml-idp-url>
+uv run python sync_catalog.py --glue-database <your-glue-database> --redshift-host <host> --redshift-cluster <your-cluster> --redshift-database <your-database> --redshift-user <your-username> --redshift-login-url <your-saml-idp-url>
+```
+
+**Option 2: User/Password**
+```bash
+uv run python sync_catalog.py --glue-database <your-glue-database> --redshift-host <host> --redshift-database <your-database> --redshift-user <your-username> --redshift-password <your-password>
 ```
 
 **Required arguments:**
@@ -83,14 +83,18 @@ uv run python sync_catalog.py \
 |----------|-------------|
 | `--glue-database` | AWS Glue database name to sync |
 | `--redshift-host` | Redshift cluster endpoint |
-| `--redshift-cluster` | Redshift cluster identifier |
 | `--redshift-database` | Redshift database name |
-| `--redshift-user` | Redshift username for SAML auth |
-| `--redshift-login-url` | SAML IdP login URL for browser-based auth |
+| `--redshift-user` | Redshift username |
 
-> **Note on Authentication**: Redshift sync uses browser-based SAML authentication. When you run the sync, a browser window will open for you to authenticate with your IdP (e.g., Okta). This is a one-time authentication per sync session. If you only need Glue schemas, use `--skip-redshift` to avoid the browser auth entirely.
->
-> **Using different auth methods**: To use IAM authentication, basic username/password, or other methods, modify the `redshift_connector.connect()` call in the `sync_redshift()` function (`sync_catalog.py:164-175`). Refer to [redshift-connector documentation](https://github.com/aws/amazon-redshift-python-driver) for available authentication options.
+**Auth-specific arguments (one of the two approaches is required):**
+
+| Argument | Auth Type | Description |
+|----------|-----------|-------------|
+| `--redshift-login-url` | SAML | SAML IdP login URL for browser-based auth |
+| `--redshift-cluster` | SAML | Redshift cluster identifier (required for SAML) |
+| `--redshift-password` | User/Password | Redshift password for direct connection |
+
+> **Note on Authentication**: When using SAML, a browser window will open for you to authenticate with your IdP (e.g., Okta). When using user/password, no browser interaction is needed. If you only need Glue schemas, use `--skip-redshift` to skip Redshift auth entirely.
 
 **Optional arguments:**
 
@@ -206,7 +210,7 @@ AI: [Looks up schema for orders table]
 
 - **Glue** (`source: glue`): Spectrum external tables backed by S3. The sync paginates `get_tables` for a given database, extracting columns, partition keys, S3 locations, and storage formats (Parquet, ORC, CSV, JSON, Avro).
 
-- **Redshift** (`source: redshift`): Internal Redshift tables. Connects via Browser SAML and queries `information_schema.tables` + `information_schema.columns`, filtering out system schemas. Running the sync will open a browser window for SAML authentication.
+- **Redshift** (`source: redshift`): Internal Redshift tables. Connects via Browser SAML or user/password and queries `information_schema.tables` + `information_schema.columns`, filtering out system schemas.
 
 ### Inspecting the Cache
 
@@ -230,11 +234,12 @@ sqlite3 catalog.db "
 | `CATALOG_DB_PATH` | Path to the SQLite catalog database | `./catalog.db` (relative to `mcp_server.py`) |
 | `MCP_TOOL_TIMEOUT` | Timeout in seconds for tool operations | `30` |
 | `REDSHIFT_HOST` | Redshift cluster endpoint (required for `run_query`) | - |
-| `REDSHIFT_CLUSTER` | Redshift cluster identifier (required for `run_query`) | - |
+| `REDSHIFT_CLUSTER` | Redshift cluster identifier (required for SAML auth) | - |
 | `REDSHIFT_DATABASE` | Redshift database name (required for `run_query`) | - |
-| `REDSHIFT_USER` | Redshift username for SAML auth (required for `run_query`) | - |
+| `REDSHIFT_USER` | Redshift username | - |
+| `REDSHIFT_PASSWORD` | Redshift password (for user/password auth) | - |
 | `REDSHIFT_REGION` | AWS region | `eu-west-1` |
-| `REDSHIFT_LOGIN_URL` | SAML IdP login URL (required for `run_query`) | - |
+| `REDSHIFT_LOGIN_URL` | SAML IdP login URL (for SAML auth) | - |
 | `REDSHIFT_QUERY_TIMEOUT` | Query execution timeout in seconds | `60` |
 | `REDSHIFT_MAX_ROWS` | Default max rows returned by `run_query` | `1000` |
 
@@ -244,8 +249,13 @@ To use the `run_query` tool, pass the Redshift connection env vars when configur
 
 #### Claude Code
 
+SAML:
 ```bash
 claude mcp add schema-catalog --scope user -e REDSHIFT_HOST=<host> -e REDSHIFT_CLUSTER=<cluster> -e REDSHIFT_DATABASE=<database> -e REDSHIFT_USER=<user> -e REDSHIFT_LOGIN_URL=<saml-url> -- uv run --directory /path/to/redshift-query-pilot python mcp_server.py
+```
+User/Password:
+```bash
+claude mcp add schema-catalog --scope user -e REDSHIFT_HOST=<host> -e REDSHIFT_CLUSTER=<cluster> -e REDSHIFT_DATABASE=<database> -e REDSHIFT_USER=<user> -e REDSHIFT_PASSWORD=<password> -- uv run --directory /path/to/redshift-query-pilot python mcp_server.py
 ```
 
 #### GitHub Copilot (CLI)
@@ -261,7 +271,8 @@ claude mcp add schema-catalog --scope user -e REDSHIFT_HOST=<host> -e REDSHIFT_C
         "REDSHIFT_CLUSTER": "your-cluster-id",
         "REDSHIFT_DATABASE": "your_db",
         "REDSHIFT_USER": "your_user",
-        "REDSHIFT_LOGIN_URL": "https://your-idp.com/saml/login"
+        "REDSHIFT_LOGIN_URL": "https://your-idp.com/saml/login",
+        "REDSHIFT_PASSWORD": "your_password"
       }
     }
   }

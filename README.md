@@ -234,7 +234,7 @@ sqlite3 catalog.db "
 | `CATALOG_DB_PATH` | Path to the SQLite catalog database | `./catalog.db` (relative to `mcp_server.py`) |
 | `MCP_TOOL_TIMEOUT` | Timeout in seconds for tool operations | `30` |
 | `REDSHIFT_HOST` | Redshift cluster endpoint (required for `run_query`) | - |
-| `REDSHIFT_CLUSTER` | Redshift cluster identifier (required for `run_query`) | - |
+| `REDSHIFT_CLUSTER` | Redshift cluster identifier (required for SAML auth) | - |
 | `REDSHIFT_DATABASE` | Redshift database name (required for `run_query`) | - |
 | `REDSHIFT_USER` | Redshift username | - |
 | `REDSHIFT_PASSWORD` | Redshift password (for user/password auth) | - |

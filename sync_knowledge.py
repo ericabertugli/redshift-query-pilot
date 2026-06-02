@@ -74,19 +74,23 @@ def _parse_yaml_file(
     col_rows = []
 
     for table in content["tables"]:
-        table_name = table.get("name", "")
+        if not isinstance(table, dict):
+            continue
+        table_name = table.get("name") or ""
         if not table_name:
             continue
 
-        db_name = table.get("database", "")
-        table_desc = table.get("description", "").strip()
+        db_name = table.get("database") or ""
+        table_desc = (table.get("description") or "").strip()
 
         if table_desc:
             table_rows.append((db_name, table_name, rel_path, table_desc))
 
-        for col in table.get("columns", []):
-            col_name = col.get("name", "")
-            col_desc = col.get("description", "").strip()
+        for col in table.get("columns") or []:
+            if not isinstance(col, dict):
+                continue
+            col_name = col.get("name") or ""
+            col_desc = (col.get("description") or "").strip()
             if col_name and col_desc:
                 col_rows.append((db_name, table_name, col_name, rel_path, col_desc))
 

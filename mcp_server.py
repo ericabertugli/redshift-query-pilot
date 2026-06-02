@@ -121,30 +121,38 @@ def search_tables(keyword: str, source: str | None = None) -> str:
     return "\n".join(results)
 
 
-def _get_knowledge_table_descs(conn, table_name: str) -> list[dict]:
-    """Fetch table descriptions from knowledge tables, matching by table_name."""
-    cursor = conn.execute(
-        """SELECT source_file, description FROM table_descriptions
-           WHERE table_name LIKE ? ORDER BY source_file""",
-        (f"%{table_name}%",),
-    )
-    return [dict(row) for row in cursor.fetchall()]
+def _get_knowledge_table_descs(conn, table_name: str, exact: bool = True) -> list[dict]:
+    """Fetch table descriptions from knowledge tables."""
+    try:
+        op, val = ("=", table_name) if exact else ("LIKE", f"%{table_name}%")
+        cursor = conn.execute(
+            f"""SELECT source_file, description FROM table_descriptions
+               WHERE table_name {op} ? ORDER BY source_file""",
+            (val,),
+        )
+        return [dict(row) for row in cursor.fetchall()]
+    except sqlite3.OperationalError:
+        return []
 
 
-def _get_knowledge_col_descs(conn, table_name: str) -> dict[str, list[dict]]:
+def _get_knowledge_col_descs(conn, table_name: str, exact: bool = True) -> dict[str, list[dict]]:
     """Fetch column descriptions from knowledge tables, keyed by column_name."""
-    cursor = conn.execute(
-        """SELECT column_name, source_file, description FROM column_descriptions
-           WHERE table_name LIKE ? ORDER BY column_name, source_file""",
-        (f"%{table_name}%",),
-    )
-    result: dict[str, list[dict]] = {}
-    for row in cursor.fetchall():
-        col = row["column_name"]
-        if col not in result:
-            result[col] = []
-        result[col].append({"source_file": row["source_file"], "description": row["description"]})
-    return result
+    try:
+        op, val = ("=", table_name) if exact else ("LIKE", f"%{table_name}%")
+        cursor = conn.execute(
+            f"""SELECT column_name, source_file, description FROM column_descriptions
+               WHERE table_name {op} ? ORDER BY column_name, source_file""",
+            (val,),
+        )
+        result: dict[str, list[dict]] = {}
+        for row in cursor.fetchall():
+            col = row["column_name"]
+            if col not in result:
+                result[col] = []
+            result[col].append({"source_file": row["source_file"], "description": row["description"]})
+        return result
+    except sqlite3.OperationalError:
+        return {}
 
 
 @mcp.tool()
@@ -168,7 +176,7 @@ def get_field_descriptions(
         results = []
 
         # Table descriptions
-        table_descs = _get_knowledge_table_descs(conn, table_name)
+        table_descs = _get_knowledge_table_descs(conn, table_name, exact=False)
         if table_descs:
             results.append(f"=== Table descriptions for '*{table_name}*' ===")
             for row in table_descs:
@@ -176,16 +184,19 @@ def get_field_descriptions(
             results.append("")
 
         # Column descriptions
-        col_query = """SELECT column_name, source_file, description FROM column_descriptions
-                       WHERE table_name LIKE ?"""
-        params = [f"%{table_name}%"]
-        if column_name:
-            col_query += " AND column_name LIKE ?"
-            params.append(f"%{column_name}%")
-        col_query += " ORDER BY column_name, source_file"
+        try:
+            col_query = """SELECT column_name, source_file, description FROM column_descriptions
+                           WHERE table_name LIKE ?"""
+            params: list[str] = [f"%{table_name}%"]
+            if column_name:
+                col_query += " AND column_name LIKE ?"
+                params.append(f"%{column_name}%")
+            col_query += " ORDER BY column_name, source_file"
 
-        cursor = conn.execute(col_query, params)
-        col_rows = cursor.fetchall()
+            cursor = conn.execute(col_query, params)
+            col_rows = cursor.fetchall()
+        except sqlite3.OperationalError:
+            col_rows = []
 
         if col_rows:
             results.append(f"=== Column descriptions ===")

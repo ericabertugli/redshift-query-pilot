@@ -19,8 +19,9 @@ Instead of manually looking up table schemas or remembering Spectrum quirks, jus
 The tool consists of three components:
 
 1. **Schema Sync** (`sync_catalog.py`) - Fetches table schemas from AWS Glue (Spectrum/Data Lake) and Redshift (Data Warehouse) and caches them in a local SQLite database. Must be run periodically to keep the cache up to date.
-2. **MCP Server** (`mcp_server.py`) - Exposes the cached schemas to AI assistants via the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/).
-3. **LLM Skill** (`command.md`) - Custom instructions that teach the AI assistant how to write performant queries in Spectrum and Redshift, including partition filtering, predicate pushdown, and storage format optimization
+2. **Knowledge Sync** (`sync_knowledge.py`) - Parses table and column descriptions from YAML files in the `knowledge/` directory into the same SQLite database. Enriches schema data with human-readable documentation.
+3. **MCP Server** (`mcp_server.py`) - Exposes the cached schemas and documentation to AI assistants via the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/).
+4. **LLM Skill** (`command.md`) - Custom instructions that teach the AI assistant how to write performant queries in Spectrum and Redshift, including partition filtering, predicate pushdown, and storage format optimization
 
 ```mermaid
 flowchart LR
@@ -31,8 +32,13 @@ flowchart LR
 
     subgraph Local Cache
         Sync[sync_catalog.py]
+        KSync[sync_knowledge.py]
         DB[(catalog.db)]
         MCP[mcp_server.py]
+    end
+
+    subgraph Knowledge Sources
+        YAML[Knowledge YAML files]
     end
 
     AI[AI Assistant<br/>Claude, Copilot, etc.]
@@ -40,6 +46,8 @@ flowchart LR
     Glue --> Sync
     RS --> Sync
     Sync --> DB
+    YAML --> KSync
+    KSync --> DB
     DB --> MCP
     MCP <-->|MCP Protocol| AI
 ```
@@ -114,6 +122,20 @@ uv run python sync_catalog.py --skip-redshift --glue-database <your-glue-databas
 ```
 
 > **Note**: Re-run the sync periodically to keep the cache up to date when table schemas change.
+
+### Sync the Knowledge Base (optional)
+
+Run `sync_knowledge.py` to parse table and column descriptions from YAML files into `catalog.db`:
+
+```bash
+uv run python sync_knowledge.py -v
+```
+
+Knowledge files are stored as `*.yml` files in the `knowledge/` directory (gitignored — company-specific data). All files use a single YAML format described in `knowledge/README.md`.
+
+Multiple files can describe the same table or column — descriptions are stored per source file and presented with attribution. You can generate these YAML files from any source (Avro schemas, dbt docs, data catalogs, etc.) using conversion scripts.
+
+> **Note**: Re-run `sync_knowledge.py` after updating any files in `knowledge/`.
 
 ### Configure the MCP Server
 
@@ -200,10 +222,11 @@ AI: [Looks up schema for orders table]
 | Tool | Description |
 |------|-------------|
 | `search_tables` | Find tables by name/keyword, optionally filter by source (`glue` or `redshift`) |
-| `get_table_schema` | Get full schema (columns, types, partition keys) for a specific table |
+| `get_table_schema` | Get full schema (columns, types, partition keys) for a specific table. Includes knowledge-base descriptions when available |
 | `list_partition_keys` | List partition keys for a table with optimization tips |
 | `find_columns` | Find tables containing a specific column name |
 | `get_schema_mapping` | Get mapping between Glue databases and Redshift external schemas |
+| `get_field_descriptions` | Get detailed table/column descriptions from knowledge YAML files |
 | `run_query` | Execute a SQL query against Redshift and return results (SELECT, CTEs, CREATE TEMP TABLE) |
 
 ### Schema Sources

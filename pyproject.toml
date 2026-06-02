@@ -10,8 +10,10 @@ dependencies = [
     "beautifulsoup4>=4.11.0",
     "lxml>=4.9.0",
     "mcp>=1.0.0",
+    "pyyaml>=6.0",
 ]
 
 [project.scripts]
 schema-sync = "sync_catalog:main"
 schema-catalog-mcp = "mcp_server:main"
+knowledge-sync = "sync_knowledge:main"

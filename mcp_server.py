@@ -121,6 +121,87 @@ def search_tables(keyword: str, source: str | None = None) -> str:
     return "\n".join(results)
 
 
+def _get_knowledge_table_descs(conn, table_name: str) -> list[dict]:
+    """Fetch table descriptions from knowledge tables, matching by table_name."""
+    cursor = conn.execute(
+        """SELECT source_file, description FROM table_descriptions
+           WHERE table_name LIKE ? ORDER BY source_file""",
+        (f"%{table_name}%",),
+    )
+    return [dict(row) for row in cursor.fetchall()]
+
+
+def _get_knowledge_col_descs(conn, table_name: str) -> dict[str, list[dict]]:
+    """Fetch column descriptions from knowledge tables, keyed by column_name."""
+    cursor = conn.execute(
+        """SELECT column_name, source_file, description FROM column_descriptions
+           WHERE table_name LIKE ? ORDER BY column_name, source_file""",
+        (f"%{table_name}%",),
+    )
+    result: dict[str, list[dict]] = {}
+    for row in cursor.fetchall():
+        col = row["column_name"]
+        if col not in result:
+            result[col] = []
+        result[col].append({"source_file": row["source_file"], "description": row["description"]})
+    return result
+
+
+@mcp.tool()
+@with_timeout()
+def get_field_descriptions(
+    table_name: str, column_name: str | None = None
+) -> str:
+    """Get knowledge-base descriptions for a table and its columns.
+
+    Searches across all knowledge YAML files and returns descriptions
+    with source file attribution.
+
+    Args:
+        table_name: Table name to search for (partial match supported)
+        column_name: Optional column name to filter (partial match supported)
+
+    Returns:
+        Descriptions from all matching knowledge files
+    """
+    with get_db() as conn:
+        results = []
+
+        # Table descriptions
+        table_descs = _get_knowledge_table_descs(conn, table_name)
+        if table_descs:
+            results.append(f"=== Table descriptions for '*{table_name}*' ===")
+            for row in table_descs:
+                results.append(f"  [{row['source_file']}] {row['description']}")
+            results.append("")
+
+        # Column descriptions
+        col_query = """SELECT column_name, source_file, description FROM column_descriptions
+                       WHERE table_name LIKE ?"""
+        params = [f"%{table_name}%"]
+        if column_name:
+            col_query += " AND column_name LIKE ?"
+            params.append(f"%{column_name}%")
+        col_query += " ORDER BY column_name, source_file"
+
+        cursor = conn.execute(col_query, params)
+        col_rows = cursor.fetchall()
+
+        if col_rows:
+            results.append(f"=== Column descriptions ===")
+            current_col = None
+            for row in col_rows:
+                if row["column_name"] != current_col:
+                    current_col = row["column_name"]
+                    results.append(f"\n  {current_col}:")
+                results.append(f"    [{row['source_file']}] {row['description']}")
+
+    if not results:
+        return f"No knowledge descriptions found for '{table_name}'"
+
+    return "\n".join(results)
+
+
 @mcp.tool()
 @with_timeout()
 def get_table_schema(table_name: str, database_name: str | None = None) -> str:
@@ -178,6 +259,24 @@ def get_table_schema(table_name: str, database_name: str | None = None) -> str:
                 )
 
             results.append("")
+
+        # Append knowledge descriptions if available
+        table_descs = _get_knowledge_table_descs(conn, table_name)
+        col_descs = _get_knowledge_col_descs(conn, table_name)
+
+        if table_descs or col_descs:
+            results.append("--- Knowledge Base ---")
+            if table_descs:
+                results.append("Table descriptions:")
+                for row in table_descs:
+                    results.append(f"  [{row['source_file']}] {row['description']}")
+                results.append("")
+            if col_descs:
+                results.append("Column descriptions:")
+                for col_name, descs in col_descs.items():
+                    for d in descs:
+                        results.append(f"  {col_name}: [{d['source_file']}] {d['description']}")
+                results.append("")
 
     return "\n".join(results)
 

@@ -8,3 +8,5 @@ __pycache__/
 
 # Project
 catalog.db
+knowledge/*
+!knowledge/README.md

@@ -28,7 +28,7 @@ CREATE TABLE IF NOT EXISTS table_descriptions (
     source_file TEXT NOT NULL,
     description TEXT NOT NULL,
     last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(table_name, source_file)
+    UNIQUE(database_name, table_name, source_file)
 );
 
 CREATE TABLE IF NOT EXISTS column_descriptions (
@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS column_descriptions (
     source_file TEXT NOT NULL,
     description TEXT NOT NULL,
     last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(table_name, column_name, source_file)
+    UNIQUE(database_name, table_name, column_name, source_file)
 );
 
 CREATE INDEX IF NOT EXISTS idx_table_desc_lookup

@@ -25,7 +25,7 @@ _ALLOWED_SQL_RE = re.compile(
     re.IGNORECASE,
 )
 
-mcp = FastMCP("schema-query")
+mcp = FastMCP("mcp-redshift")
 
 _redshift_conn = None
 

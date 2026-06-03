@@ -120,9 +120,8 @@ def sync_knowledge(db_path: str = str(DB_PATH)) -> tuple[int, int]:
                 """INSERT INTO table_descriptions
                    (database_name, table_name, source_file, description, last_synced)
                    VALUES (?, ?, ?, ?, ?)
-                   ON CONFLICT(table_name, source_file)
-                   DO UPDATE SET database_name=excluded.database_name,
-                                 description=excluded.description,
+                   ON CONFLICT(database_name, table_name, source_file)
+                   DO UPDATE SET description=excluded.description,
                                  last_synced=excluded.last_synced""",
                 (db_name, table_name, src_file, desc, now),
             )
@@ -133,9 +132,8 @@ def sync_knowledge(db_path: str = str(DB_PATH)) -> tuple[int, int]:
                 """INSERT INTO column_descriptions
                    (database_name, table_name, column_name, source_file, description, last_synced)
                    VALUES (?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(table_name, column_name, source_file)
-                   DO UPDATE SET database_name=excluded.database_name,
-                                 description=excluded.description,
+                   ON CONFLICT(database_name, table_name, column_name, source_file)
+                   DO UPDATE SET description=excluded.description,
                                  last_synced=excluded.last_synced""",
                 (db_name, table_name, col_name, src_file, desc, now),
             )

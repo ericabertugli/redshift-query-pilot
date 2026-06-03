@@ -64,7 +64,7 @@ flowchart LR
 
 ```bash
 # Clone the repository
-git clone https://github.com/StuartApp/redshift-query-pilot.git
+git clone https://github.com/ericabertugli/redshift-query-pilot.git
 cd redshift-query-pilot
 
 # Install dependencies

@@ -112,37 +112,37 @@ Redshift Spectrum supports nested data but **only scalar values can appear in th
 
 ```sql
 -- BAD: Selecting a struct or array directly - WILL FAIL
-SELECT t.content.info.assignments  -- array type, not allowed
-FROM spectrum.solver_splits t;
+SELECT t.content.items  -- array type, not allowed
+FROM spectrum.orders t;
 
 -- BAD: Selecting a struct
-SELECT t.content.info  -- struct type, not allowed
-FROM spectrum.solver_splits t;
+SELECT t.content  -- struct type, not allowed
+FROM spectrum.orders t;
 
 -- GOOD: Extract scalar fields from nested structs using dot notation
 SELECT
-    t.zone,
-    t.content.info.measurements.deliveryMeasurements.numTotalDeliveries,
-    t.content.info.measurements.deliveryMeasurements.numAssignedDeliveries
-FROM spectrum.solver_splits t
+    t.store_id,
+    t.content.summary.totalItems,
+    t.content.summary.processedItems
+FROM spectrum.orders t
 WHERE t.year = '2024' AND t.month = '01' AND t.day = '15';
 
 -- GOOD: Unnest arrays and select scalar fields from array elements
 SELECT
-    t.zone,
-    a.courierId,
-    a.totalCost
-FROM spectrum.solver_splits t, t.content.info.assignments a
+    t.store_id,
+    i.customerId,
+    i.price
+FROM spectrum.orders t, t.content.items i
 WHERE t.year = '2024' AND t.month = '01' AND t.day = '15';
 
 -- GOOD: Unnest nested arrays (array inside struct inside array)
 SELECT
-    t.zone,
-    a.courierId,
-    d AS delivery_id
-FROM spectrum.solver_splits t,
-     t.content.info.assignments a,
-     a.deliveries d
+    t.store_id,
+    i.customerId,
+    s AS subItemId
+FROM spectrum.orders t,
+     t.content.items i,
+     i.subItems s
 WHERE t.year = '2024' AND t.month = '01' AND t.day = '15';
 ```
 

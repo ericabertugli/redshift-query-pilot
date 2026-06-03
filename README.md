@@ -152,14 +152,14 @@ The catalog server reads from the SQLite cache. No Redshift env vars needed.
 
 **Claude Code:**
 ```bash
-claude mcp add mcp-catalog --scope user -- uv run --directory /path/to/redshift-query-pilot python mcp_catalog.py
+claude mcp add mcp_catalog --scope user -- uv run --directory /path/to/redshift-query-pilot python mcp_catalog.py
 ```
 
 **GitHub Copilot (CLI)** — add to `~/.copilot/mcp-config.json`:
 ```json
 {
   "mcpServers": {
-    "mcp-catalog": {
+    "mcp_catalog": {
       "command": "uv",
       "args": ["run", "--directory", "/path/to/redshift-query-pilot", "python", "mcp_catalog.py"]
     }
@@ -170,7 +170,7 @@ claude mcp add mcp-catalog --scope user -- uv run --directory /path/to/redshift-
 **opencode** — add to `~/.config/opencode/opencode.json` / `.jsonc`:
 ```json
 "mcp": {
-  "mcp-catalog": {
+  "mcp_catalog": {
     "type": "local",
     "command": ["uv", "run", "--directory", "/path/to/redshift-query-pilot", "python", "mcp_catalog.py"],
     "enabled": true
@@ -198,7 +198,7 @@ Register the server with Redshift connection env vars.
 **Claude Code:**
 ```bash
 # User/password:
-claude mcp add mcp-redshift --scope user \
+claude mcp add mcp_query --scope user \
   -e REDSHIFT_HOST=<host> \
   -e REDSHIFT_DATABASE=<db> \
   -e REDSHIFT_USER=<user> \
@@ -206,7 +206,7 @@ claude mcp add mcp-redshift --scope user \
   -- uv run --directory /path/to/redshift-query-pilot python mcp_query.py
 
 # SAML:
-claude mcp add mcp-redshift --scope user \
+claude mcp add mcp_query --scope user \
   -e REDSHIFT_HOST=<host> \
   -e REDSHIFT_CLUSTER=<cluster> \
   -e REDSHIFT_DATABASE=<db> \
@@ -219,7 +219,7 @@ claude mcp add mcp-redshift --scope user \
 ```json
 {
   "mcpServers": {
-    "mcp-redshift": {
+    "mcp_query": {
       "command": "uv",
       "args": ["run", "--directory", "/path/to/redshift-query-pilot", "python", "mcp_query.py"],
       "env": {
@@ -236,7 +236,7 @@ claude mcp add mcp-redshift --scope user \
 **opencode** — add to `~/.config/opencode/opencode.json` / `.jsonc`:
 ```json
 "mcp": {
-  "mcp-redshift": {
+  "mcp_query": {
     "type": "local",
     "command": ["uv", "run", "--directory", "/path/to/redshift-query-pilot", "python", "mcp_query.py"],
     "enabled": true,
@@ -258,13 +258,13 @@ Restart your client after registering.
 
 | Server | Tool | Description |
 |--------|------|-------------|
-| mcp-catalog | `search_tables` | Find tables by name/keyword, optionally filter by source (`glue` or `redshift`) |
-| mcp-catalog | `get_table_schema` | Get full schema (columns, types, partition keys) for a specific table. Includes knowledge-base descriptions when available |
-| mcp-catalog | `list_partition_keys` | List partition keys for a table with optimization tips |
-| mcp-catalog | `find_columns` | Find tables containing a specific column name |
-| mcp-catalog | `get_schema_mapping` | Get mapping between Glue databases and Redshift external schemas |
-| mcp-catalog | `get_field_descriptions` | Get detailed table/column descriptions from knowledge YAML files |
-| mcp-redshift | `run_query` | Execute a SQL query against Redshift and return results (SELECT, CTEs, CREATE TEMP TABLE) |
+| mcp_catalog | `search_tables` | Find tables by name/keyword, optionally filter by source (`glue` or `redshift`) |
+| mcp_catalog | `get_table_schema` | Get full schema (columns, types, partition keys) for a specific table. Includes knowledge-base descriptions when available |
+| mcp_catalog | `list_partition_keys` | List partition keys for a table with optimization tips |
+| mcp_catalog | `find_columns` | Find tables containing a specific column name |
+| mcp_catalog | `get_schema_mapping` | Get mapping between Glue databases and Redshift external schemas |
+| mcp_catalog | `get_field_descriptions` | Get detailed table/column descriptions from knowledge YAML files |
+| mcp_query | `run_query` | Execute a SQL query against Redshift and return results (SELECT, CTEs, CREATE TEMP TABLE) |
 
 ### Environment Variables
 

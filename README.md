@@ -14,194 +14,6 @@ It's an AI Agent Skill designed to integrate with your favorite LLM-powered codi
 
 Instead of manually looking up table schemas or remembering Spectrum quirks, just ask your AI assistant to write a query and it will automatically look up the relevant schemas and apply best practices.
 
-## How It Works
-
-The tool consists of three components:
-
-1. **Schema Sync** (`sync_catalog.py`) - Fetches table schemas from AWS Glue (Spectrum/Data Lake) and Redshift (Data Warehouse) and caches them in a local SQLite database. Must be run periodically to keep the cache up to date.
-2. **Knowledge Sync** (`sync_knowledge.py`) - Parses table and column descriptions from YAML files in the `knowledge/` directory into the same SQLite database. Enriches schema data with human-readable documentation.
-3. **MCP Server** (`mcp_server.py`) - Exposes the cached schemas and documentation to AI assistants via the [Model Context Protocol (MCP)](https://modelcontextprotocol.io/).
-4. **LLM Skill** (`command.md`) - Custom instructions that teach the AI assistant how to write performant queries in Spectrum and Redshift, including partition filtering, predicate pushdown, and storage format optimization
-
-```mermaid
-flowchart LR
-    subgraph Data Sources
-        Glue[AWS Glue<br/>Spectrum]
-        RS[Redshift<br/>DWH]
-    end
-
-    subgraph Local Cache
-        Sync[sync_catalog.py]
-        KSync[sync_knowledge.py]
-        DB[(catalog.db)]
-        MCP[mcp_server.py]
-    end
-
-    subgraph Knowledge Sources
-        YAML[Knowledge YAML files]
-    end
-
-    AI[AI Assistant<br/>Claude, Copilot, etc.]
-
-    Glue --> Sync
-    RS --> Sync
-    Sync --> DB
-    YAML --> KSync
-    KSync --> DB
-    DB --> MCP
-    MCP <-->|MCP Protocol| AI
-```
-
-## Installation
-
-### Prerequisites
-
-- Python 3.10+
-- [uv](https://docs.astral.sh/uv/) (recommended) or pip
-- AWS credentials configured (for Glue access, e.g., via `aws sso login`)
-
-### Setup
-
-```bash
-# Clone the repository
-git clone https://github.com/ericabertugli/redshift-query-pilot.git
-cd redshift-query-pilot
-
-# Install dependencies
-uv sync
-```
-
-### Sync the Schema Catalog
-
-Run `sync_catalog.py` to fetch table schemas from AWS Glue and Redshift:
-
-**Option 1: SAML (browser-based auth)**
-```bash
-uv run python sync_catalog.py --glue-database <your-glue-database> --redshift-host <host> --redshift-cluster <your-cluster> --redshift-database <your-database> --redshift-user <your-username> --redshift-login-url <your-saml-idp-url>
-```
-
-**Option 2: User/Password**
-```bash
-uv run python sync_catalog.py --glue-database <your-glue-database> --redshift-host <host> --redshift-database <your-database> --redshift-user <your-username> --redshift-password <your-password>
-```
-
-**Required arguments:**
-
-| Argument | Description |
-|----------|-------------|
-| `--glue-database` | AWS Glue database name to sync |
-| `--redshift-host` | Redshift cluster endpoint |
-| `--redshift-database` | Redshift database name |
-| `--redshift-user` | Redshift username |
-
-**Auth-specific arguments (one of the two approaches is required):**
-
-| Argument | Auth Type | Description |
-|----------|-----------|-------------|
-| `--redshift-login-url` | SAML | SAML IdP login URL for browser-based auth |
-| `--redshift-cluster` | SAML | Redshift cluster identifier (required for SAML) |
-| `--redshift-password` | User/Password | Redshift password for direct connection |
-
-> **Note on Authentication**: When using SAML, a browser window will open for you to authenticate with your IdP (e.g., Okta). When using user/password, no browser interaction is needed. If you only need Glue schemas, use `--skip-redshift` to skip Redshift auth entirely.
-
-**Optional arguments:**
-
-| Argument | Default | Description |
-|----------|---------|-------------|
-| `-o, --output` | `./catalog.db` | SQLite output path |
-| `--redshift-region` | `eu-west-1` | AWS region |
-| `--skip-glue` | - | Skip Glue sync |
-| `--skip-redshift` | - | Skip Redshift sync |
-| `--saml-timeout` | `120` | SAML auth timeout in seconds |
-| `-v, --verbose` | - | Enable debug logging |
-
-**Glue-only sync** (no Redshift/SAML auth required):
-
-```bash
-uv run python sync_catalog.py --skip-redshift --glue-database <your-glue-database>
-```
-
-> **Note**: Re-run the sync periodically to keep the cache up to date when table schemas change.
-
-### Sync the Knowledge Base (optional)
-
-Run `sync_knowledge.py` to parse table and column descriptions from YAML files into `catalog.db`:
-
-```bash
-uv run python sync_knowledge.py -v
-```
-
-Knowledge files are stored as `*.yml` files in the `knowledge/` directory (gitignored — company-specific data). All files use a single YAML format described in `knowledge/README.md`.
-
-Multiple files can describe the same table or column — descriptions are stored per source file and presented with attribution. You can generate these YAML files from any source (Avro schemas, dbt docs, data catalogs, etc.) using conversion scripts.
-
-> **Note**: Re-run `sync_knowledge.py` after updating any files in `knowledge/`.
-
-### Configure the MCP Server
-
-The MCP server exposes the schema catalog to your AI assistant. Configuration varies by client:
-
-#### Claude Code
-
-Register the server globally:
-
-```bash
-claude mcp add schema-catalog --scope user -- uv run --directory /path/to/redshift-query-pilot python mcp_server.py
-```
-
-Verify it's connected:
-
-```bash
-claude mcp list
-```
-
-Restart Claude Code after registration.
-
-#### GitHub Copilot (CLI)
-
-Edit `~/.copilot/mcp-config.json`:
-
-```json
-{
-  "mcpServers": {
-    "schema-catalog": {
-      "command": "uv",
-      "args": ["run", "--directory", "/path/to/redshift-query-pilot", "python", "mcp_server.py"]
-    }
-  }
-}
-```
-
-Or use the interactive command within Copilot CLI: `/mcp add`
-
-Restart your client after updating the configuration.
-
-### Add the LLM Skill
-
-Install custom instructions that teach the AI assistant about Redshift/Spectrum SQL syntax and best practices.
-
-#### Claude Code - Global Skill
-
-```bash
-# Create the global commands directory if it doesn't exist
-mkdir -p ~/.claude/commands
-
-# Copy the instructions as a global skill
-cp /path/to/redshift-query-pilot/command.md ~/.claude/commands/dwh.md
-```
-
-After installation, type `/dwh` in any Claude Code session to load the SQL assistant instructions.
-
-#### GitHub Copilot - Global Instructions
-
-```bash
-# Create the global GitHub config directory if it doesn't exist
-mkdir -p ~/.github
-
-# Append instructions to Copilot's global instructions
-cat /path/to/redshift-query-pilot/command.md >> ~/.github/copilot-instructions.md
-```
-
 ## Usage
 
 Once configured, simply ask your AI assistant to write SQL queries. It will automatically look up schemas and apply Spectrum best practices.
@@ -215,46 +27,250 @@ AI: [Looks up schema for orders table]
     [Generates optimized query with partition filters]
 ```
 
+## How It Works
+
+The tool consists of three components, that can be used separately:
+
+1. **Local Schema Extraction** — scripts to pull table metadata from Glue and Redshift into a local SQLite cache. Only needed if you don't already have a catalog (e.g., a central data catalog API). Contains:
+   - **Schema Sync** (`sync_catalog.py`) — fetches schemas from AWS Glue and Redshift
+   - **Knowledge Sync** (`sync_knowledge.py`) — adds table/column descriptions from YAML files
+
+2. **MCP Servers** — Two independent [MCP](https://modelcontextprotocol.io/) servers exposing the schema catalog and query execution separately:
+   - **Catalog server** (`mcp_catalog.py`) — lightweight, Redshift-free: schema lookup, table search, partition keys. Can be replaced by any remote catalog server that implements similar tools.
+   - **Query server** (`mcp_query.py`) — bare `run_query` with Redshift connection management
+
+3. **LLM Skill** (`SKILL.md`) — Custom instructions that teach the AI assistant how to write performant queries in Spectrum and Redshift, including partition filtering, predicate pushdown, and storage format optimization
+
+```mermaid
+flowchart LR
+    subgraph Sources
+        Glue[AWS Glue]
+        YAML[Knowledge YAML]
+    end
+
+    subgraph "Schema Extraction"
+        Sync[sync_catalog.py]
+        KSync[sync_knowledge.py]
+        DB[(catalog.db)]
+    end
+
+    subgraph "MCP Servers"
+        CAT[Catalog<br/>mcp_catalog.py]
+        QRY[Query<br/>mcp_query.py]
+    end
+
+    RS[(Redshift)]
+    Skill[SKILL.md<br/>query best practices]
+    AI[AI Assistant]
+
+    Glue --> Sync
+    RS -->|schemas| Sync
+    Sync --> DB
+    YAML --> KSync
+    KSync --> DB
+    DB --> CAT
+    CAT <-->|search, schema, partitions| AI
+    QRY <-->|run_query| AI
+    QRY -->|execute SQL| RS
+    Skill -.->|injected as context| AI
+```
+
+## Installation
+
+### 1. Install the LLM Skill
+
+The skill teaches the AI assistant Redshift/Spectrum SQL syntax, partition optimization, and working with complex types.
+
+**Claude Code:**
+```bash
+mkdir -p ~/.claude/skills/dwh
+cp /path/to/redshift-query-pilot/SKILL.md ~/.claude/skills/dwh/SKILL.md
+```
+Claude Code auto-discovers skills from their descriptions. Invoke with `/dwh` or just describe your query task.
+
+**opencode:**
+```bash
+mkdir -p ~/.config/opencode/skills/dwh
+cp /path/to/redshift-query-pilot/SKILL.md ~/.config/opencode/skills/dwh/SKILL.md
+```
+Restart opencode to pick it up.
+
+---
+
+### 2. Sync the Schema Catalog & Install the Catalog MCP Server
+
+Only needed if you don't already have a central catalog (e.g., a data catalog API). Skip this section if you do — just point the skill at your existing catalog.
+
+Prerequisites: Python 3.10+ and [uv](https://docs.astral.sh/uv/) (or pip).
+
+**Clone and install:**
+```bash
+git clone https://github.com/ericabertugli/redshift-query-pilot.git
+cd redshift-query-pilot
+uv sync
+```
+
+**A. Sync schemas from Glue and/or Redshift:**
+
+```bash
+# Glue-only (no Redshift auth needed):
+uv run python sync_catalog.py --skip-redshift --glue-database <your-glue-database>
+
+# With Redshift — SAML auth:
+uv run python sync_catalog.py --glue-database <your-glue-database> --redshift-host <host> --redshift-cluster <cluster> --redshift-database <db> --redshift-user <user> --redshift-login-url <saml-url>
+
+# With Redshift — user/password auth:
+uv run python sync_catalog.py --glue-database <your-glue-database> --redshift-host <host> --redshift-database <db> --redshift-user <user> --redshift-password <password>
+```
+
+| Argument | Required | Description |
+|----------|----------|-------------|
+| `--glue-database` | Yes (unless `--skip-glue`) | AWS Glue database name |
+| `--redshift-host` | Yes (unless `--skip-redshift`) | Redshift cluster endpoint |
+| `--redshift-database` | Conditional | Redshift database name |
+| `--redshift-user` | Conditional | Redshift username |
+| `--redshift-password` | For user/password | Redshift password |
+| `--redshift-login-url` | For SAML | SAML IdP login URL |
+| `--redshift-cluster` | For SAML | Redshift cluster identifier |
+| `--redshift-region` | No (default `eu-west-1`) | AWS region |
+| `-o, --output` | No (default `./catalog.db`) | SQLite output path |
+| `--skip-glue` | No | Skip Glue sync |
+| `--skip-redshift` | No | Skip Redshift sync |
+
+> **Note**: Re-run periodically to keep the cache up to date. SAML auth opens a browser window; user/password is non-interactive.
+
+**B. Sync knowledge descriptions (optional):**
+
+```bash
+uv run python sync_knowledge.py -v
+```
+Knowledge files live in `knowledge/*.yml` (gitignored). See `knowledge/README.md` for the format.
+
+**C. Register the catalog MCP server:**
+
+The catalog server reads from the SQLite cache. No Redshift env vars needed.
+
+**Claude Code:**
+```bash
+claude mcp add mcp_catalog --scope user -- uv run --directory /path/to/redshift-query-pilot python mcp_catalog.py
+```
+
+**GitHub Copilot (CLI)** — add to `~/.copilot/mcp-config.json`:
+```json
+{
+  "mcpServers": {
+    "mcp_catalog": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/redshift-query-pilot", "python", "mcp_catalog.py"]
+    }
+  }
+}
+```
+
+**opencode** — add to `~/.config/opencode/opencode.json` / `.jsonc`:
+```json
+"mcp": {
+  "mcp_catalog": {
+    "type": "local",
+    "command": ["uv", "run", "--directory", "/path/to/redshift-query-pilot", "python", "mcp_catalog.py"],
+    "enabled": true
+  }
+}
+```
+
+Restart your client after registering.
+
+---
+
+### 3. Install the Query MCP Server
+
+Only needed if you want the AI to execute SQL directly against Redshift. Requires Redshift credentials.
+
+If you haven't cloned the project yet:
+```bash
+git clone https://github.com/ericabertugli/redshift-query-pilot.git
+cd redshift-query-pilot
+uv sync
+```
+
+Register the server with Redshift connection env vars.
+
+**Claude Code:**
+```bash
+# User/password:
+claude mcp add mcp_query --scope user \
+  -e REDSHIFT_HOST=<host> \
+  -e REDSHIFT_DATABASE=<db> \
+  -e REDSHIFT_USER=<user> \
+  -e REDSHIFT_PASSWORD=<password> \
+  -- uv run --directory /path/to/redshift-query-pilot python mcp_query.py
+
+# SAML:
+claude mcp add mcp_query --scope user \
+  -e REDSHIFT_HOST=<host> \
+  -e REDSHIFT_CLUSTER=<cluster> \
+  -e REDSHIFT_DATABASE=<db> \
+  -e REDSHIFT_USER=<user> \
+  -e REDSHIFT_LOGIN_URL=<saml-url> \
+  -- uv run --directory /path/to/redshift-query-pilot python mcp_query.py
+```
+
+**GitHub Copilot (CLI)** — add to `~/.copilot/mcp-config.json`:
+```json
+{
+  "mcpServers": {
+    "mcp_query": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/redshift-query-pilot", "python", "mcp_query.py"],
+      "env": {
+        "REDSHIFT_HOST": "your-cluster.region.redshift.amazonaws.com",
+        "REDSHIFT_DATABASE": "your_db",
+        "REDSHIFT_USER": "your_user",
+        "REDSHIFT_PASSWORD": "your_password"
+      }
+    }
+  }
+}
+```
+
+**opencode** — add to `~/.config/opencode/opencode.json` / `.jsonc`:
+```json
+"mcp": {
+  "mcp_query": {
+    "type": "local",
+    "command": ["uv", "run", "--directory", "/path/to/redshift-query-pilot", "python", "mcp_query.py"],
+    "enabled": true,
+    "environment": {
+      "REDSHIFT_HOST": "your-cluster.region.redshift.amazonaws.com",
+      "REDSHIFT_DATABASE": "your_db",
+      "REDSHIFT_USER": "your_user",
+      "REDSHIFT_PASSWORD": "{env:REDSHIFT_PWD}"
+    }
+  }
+}
+```
+
+Restart your client after registering.
+
 ## Technical Reference
 
 ### Available MCP Tools
 
-| Tool | Description |
-|------|-------------|
-| `search_tables` | Find tables by name/keyword, optionally filter by source (`glue` or `redshift`) |
-| `get_table_schema` | Get full schema (columns, types, partition keys) for a specific table. Includes knowledge-base descriptions when available |
-| `list_partition_keys` | List partition keys for a table with optimization tips |
-| `find_columns` | Find tables containing a specific column name |
-| `get_schema_mapping` | Get mapping between Glue databases and Redshift external schemas |
-| `get_field_descriptions` | Get detailed table/column descriptions from knowledge YAML files |
-| `run_query` | Execute a SQL query against Redshift and return results (SELECT, CTEs, CREATE TEMP TABLE) |
-
-### Schema Sources
-
-- **Glue** (`source: glue`): Spectrum external tables backed by S3. The sync paginates `get_tables` for a given database, extracting columns, partition keys, S3 locations, and storage formats (Parquet, ORC, CSV, JSON, Avro).
-
-- **Redshift** (`source: redshift`): Internal Redshift tables. Connects via Browser SAML or user/password and queries `information_schema.tables` + `information_schema.columns`, filtering out system schemas.
-
-### Inspecting the Cache
-
-```bash
-# Count tables by source
-sqlite3 catalog.db "SELECT source, database_name, COUNT(*) FROM tables GROUP BY source, database_name;"
-
-# View sample table schemas
-sqlite3 catalog.db "
-  SELECT t.table_name, c.column_name, c.data_type, c.is_partition_key
-  FROM tables t
-  JOIN columns c ON t.id = c.table_id
-  LIMIT 20;
-"
-```
+| Server | Tool | Description |
+|--------|------|-------------|
+| mcp_catalog | `search_tables` | Find tables by name/keyword, optionally filter by source (`glue` or `redshift`) |
+| mcp_catalog | `get_table_schema` | Get full schema (columns, types, partition keys) for a specific table. Includes knowledge-base descriptions when available |
+| mcp_catalog | `list_partition_keys` | List partition keys for a table with optimization tips |
+| mcp_catalog | `find_columns` | Find tables containing a specific column name |
+| mcp_catalog | `get_schema_mapping` | Get mapping between Glue databases and Redshift external schemas |
+| mcp_catalog | `get_field_descriptions` | Get detailed table/column descriptions from knowledge YAML files |
+| mcp_query | `run_query` | Execute a SQL query against Redshift and return results (SELECT, CTEs, CREATE TEMP TABLE) |
 
 ### Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `CATALOG_DB_PATH` | Path to the SQLite catalog database | `./catalog.db` (relative to `mcp_server.py`) |
+| `CATALOG_DB_PATH` | Path to the SQLite catalog database | `./catalog.db` |
 | `MCP_TOOL_TIMEOUT` | Timeout in seconds for tool operations | `30` |
 | `REDSHIFT_HOST` | Redshift cluster endpoint (required for `run_query`) | - |
 | `REDSHIFT_CLUSTER` | Redshift cluster identifier (required for SAML auth) | - |
@@ -266,40 +282,4 @@ sqlite3 catalog.db "
 | `REDSHIFT_QUERY_TIMEOUT` | Query execution timeout in seconds | `60` |
 | `REDSHIFT_MAX_ROWS` | Default max rows returned by `run_query` | `1000` |
 
-### Enabling Query Execution
 
-To use the `run_query` tool, pass the Redshift connection env vars when configuring the MCP server:
-
-#### Claude Code
-
-SAML:
-```bash
-claude mcp add schema-catalog --scope user -e REDSHIFT_HOST=<host> -e REDSHIFT_CLUSTER=<cluster> -e REDSHIFT_DATABASE=<database> -e REDSHIFT_USER=<user> -e REDSHIFT_LOGIN_URL=<saml-url> -- uv run --directory /path/to/redshift-query-pilot python mcp_server.py
-```
-User/Password:
-```bash
-claude mcp add schema-catalog --scope user -e REDSHIFT_HOST=<host> -e REDSHIFT_CLUSTER=<cluster> -e REDSHIFT_DATABASE=<database> -e REDSHIFT_USER=<user> -e REDSHIFT_PASSWORD=<password> -- uv run --directory /path/to/redshift-query-pilot python mcp_server.py
-```
-
-#### GitHub Copilot (CLI)
-
-```json
-{
-  "mcpServers": {
-    "schema-catalog": {
-      "command": "uv",
-      "args": ["run", "--directory", "/path/to/redshift-query-pilot", "python", "mcp_server.py"],
-      "env": {
-        "REDSHIFT_HOST": "your-cluster.region.redshift.amazonaws.com",
-        "REDSHIFT_CLUSTER": "your-cluster-id",
-        "REDSHIFT_DATABASE": "your_db",
-        "REDSHIFT_USER": "your_user",
-        "REDSHIFT_LOGIN_URL": "https://your-idp.com/saml/login",
-        "REDSHIFT_PASSWORD": "your_password"
-      }
-    }
-  }
-}
-```
-
-> **Note**: If you don't set the Redshift env vars, the schema catalog tools (search, schema lookup, etc.) still work — only `run_query` requires a live Redshift connection.

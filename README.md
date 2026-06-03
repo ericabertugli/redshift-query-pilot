@@ -258,13 +258,13 @@ Restart your client after registering.
 
 | Server | Tool | Description |
 |--------|------|-------------|
-| catalog | `search_tables` | Find tables by name/keyword, optionally filter by source (`glue` or `redshift`) |
-| catalog | `get_table_schema` | Get full schema (columns, types, partition keys) for a specific table. Includes knowledge-base descriptions when available |
-| catalog | `list_partition_keys` | List partition keys for a table with optimization tips |
-| catalog | `find_columns` | Find tables containing a specific column name |
-| catalog | `get_schema_mapping` | Get mapping between Glue databases and Redshift external schemas |
-| catalog | `get_field_descriptions` | Get detailed table/column descriptions from knowledge YAML files |
-| query | `run_query` | Execute a SQL query against Redshift and return results (SELECT, CTEs, CREATE TEMP TABLE) |
+| schema-catalog | `search_tables` | Find tables by name/keyword, optionally filter by source (`glue` or `redshift`) |
+| schema-catalog | `get_table_schema` | Get full schema (columns, types, partition keys) for a specific table. Includes knowledge-base descriptions when available |
+| schema-catalog | `list_partition_keys` | List partition keys for a table with optimization tips |
+| schema-catalog | `find_columns` | Find tables containing a specific column name |
+| schema-catalog | `get_schema_mapping` | Get mapping between Glue databases and Redshift external schemas |
+| schema-catalog | `get_field_descriptions` | Get detailed table/column descriptions from knowledge YAML files |
+| schema-query | `run_query` | Execute a SQL query against Redshift and return results (SELECT, CTEs, CREATE TEMP TABLE) |
 
 ### Environment Variables
 

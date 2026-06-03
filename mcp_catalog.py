@@ -12,7 +12,7 @@ from mcp.server.fastmcp import FastMCP
 DB_PATH = os.environ.get("CATALOG_DB_PATH", Path(__file__).parent / "catalog.db")
 TOOL_TIMEOUT = int(os.environ.get("MCP_TOOL_TIMEOUT", 30))
 
-mcp = FastMCP("redshift-catalog")
+mcp = FastMCP("schema-catalog")
 
 
 class ToolTimeoutError(Exception):

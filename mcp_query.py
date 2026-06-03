@@ -25,7 +25,7 @@ _ALLOWED_SQL_RE = re.compile(
     re.IGNORECASE,
 )
 
-mcp = FastMCP("redshift-query")
+mcp = FastMCP("schema-query")
 
 _redshift_conn = None
 
@@ -176,14 +176,17 @@ def run_query(sql: str, max_rows: int | None = None) -> str:
         Formatted query results as a text table, or a status message for DDL
     """
     _validate_sql(sql)
+    if max_rows is not None and max_rows <= 0:
+        raise ValueError("max_rows must be a positive integer")
     row_limit = min(max_rows or RS_MAX_ROWS, 5000)
 
+    conn = _get_redshift_connection()
+    cursor = conn.cursor()
     try:
-        conn = _get_redshift_connection()
-        cursor = conn.cursor()
         cursor.execute(sql)
 
         if cursor.description is None:
+            conn.commit()
             return "Statement executed successfully."
 
         columns = [desc[0] for desc in cursor.description]
@@ -192,10 +195,16 @@ def run_query(sql: str, max_rows: int | None = None) -> str:
         if truncated:
             rows = rows[:row_limit]
 
+        conn.commit()
         return _format_results(columns, rows, truncated)
     except Exception as e:
         _close_redshift_connection()
         return f"Query error: {e}"
+    finally:
+        try:
+            cursor.close()
+        except Exception:
+            pass
 
 
 def main():

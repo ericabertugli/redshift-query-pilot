@@ -15,5 +15,6 @@ dependencies = [
 
 [project.scripts]
 schema-sync = "sync_catalog:main"
-schema-catalog-mcp = "mcp_server:main"
+schema-catalog = "mcp_catalog:main"
+schema-query = "mcp_query:main"
 knowledge-sync = "sync_knowledge:main"

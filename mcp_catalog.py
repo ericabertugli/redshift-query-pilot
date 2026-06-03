@@ -1,60 +1,30 @@
 #!/usr/bin/env python3
-"""MCP server exposing the schema catalog for SQL query assistance."""
+"""MCP server exposing the schema catalog — no Redshift dependency."""
 
 import os
-import re
-import sqlite3
 import signal
+import sqlite3
 from functools import wraps
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
 
-from redshift_conn import connect_password, connect_saml
-
 DB_PATH = os.environ.get("CATALOG_DB_PATH", Path(__file__).parent / "catalog.db")
-# Timeout in seconds for tool operations (default: 30 seconds)
 TOOL_TIMEOUT = int(os.environ.get("MCP_TOOL_TIMEOUT", 30))
 
-# Redshift connection settings (env vars)
-RS_HOST = os.environ.get("REDSHIFT_HOST", "")
-RS_CLUSTER = os.environ.get("REDSHIFT_CLUSTER", "")
-RS_DATABASE = os.environ.get("REDSHIFT_DATABASE", "")
-RS_USER = os.environ.get("REDSHIFT_USER", "")
-RS_REGION = os.environ.get("REDSHIFT_REGION", "eu-west-1")
-RS_PASSWORD = os.environ.get("REDSHIFT_PASSWORD", "")
-RS_LOGIN_URL = os.environ.get("REDSHIFT_LOGIN_URL", "")
-RS_QUERY_TIMEOUT = int(os.environ.get("REDSHIFT_QUERY_TIMEOUT", 60))
-RS_MAX_ROWS = int(os.environ.get("REDSHIFT_MAX_ROWS", 1000))
-
-# SQL statements that are allowed (case-insensitive first keyword check)
-_ALLOWED_SQL_RE = re.compile(
-    r"^\s*(SELECT|WITH|SHOW|EXPLAIN|CREATE\s+TEMP(ORARY)?\s+TABLE)\b",
-    re.IGNORECASE,
-)
-
-mcp = FastMCP("schema-catalog")
-
-# Cached Redshift connection (reused across tool calls to avoid repeated auth)
-_redshift_conn = None
+mcp = FastMCP("redshift-catalog")
 
 
 class ToolTimeoutError(Exception):
-    """Raised when a tool operation times out."""
-
     pass
 
 
 def with_timeout(seconds: int = TOOL_TIMEOUT):
-    """Decorator that adds a timeout to a function using signals (Unix only)."""
-
     def decorator(func):
         @wraps(func)
         def wrapper(*args, **kwargs):
             def timeout_handler(signum, frame):
                 raise ToolTimeoutError(f"Operation timed out after {seconds} seconds")
-
-            # Set up the timeout
             old_handler = signal.signal(signal.SIGALRM, timeout_handler)
             signal.alarm(seconds)
             try:
@@ -63,15 +33,11 @@ def with_timeout(seconds: int = TOOL_TIMEOUT):
                 signal.alarm(0)
                 signal.signal(signal.SIGALRM, old_handler)
             return result
-
         return wrapper
-
     return decorator
 
 
 def get_db():
-    """Get a database connection with timeout."""
-    # SQLite timeout for lock acquisition (in seconds)
     conn = sqlite3.connect(DB_PATH, timeout=10.0)
     conn.row_factory = sqlite3.Row
     return conn
@@ -121,13 +87,16 @@ def search_tables(keyword: str, source: str | None = None) -> str:
     return "\n".join(results)
 
 
+_SQL_OPS = {"=": "=", "LIKE": "LIKE"}
+
+
 def _get_knowledge_table_descs(conn, table_name: str, exact: bool = True) -> list[dict]:
-    """Fetch table descriptions from knowledge tables."""
     try:
-        op, val = ("=", table_name) if exact else ("LIKE", f"%{table_name}%")
+        op_key = "=" if exact else "LIKE"
+        op = _SQL_OPS[op_key]
+        val = table_name if exact else f"%{table_name}%"
         cursor = conn.execute(
-            f"""SELECT source_file, description FROM table_descriptions
-               WHERE table_name {op} ? ORDER BY source_file""",
+            f"SELECT source_file, description FROM table_descriptions WHERE table_name {op} ? ORDER BY source_file",
             (val,),
         )
         return [dict(row) for row in cursor.fetchall()]
@@ -136,12 +105,12 @@ def _get_knowledge_table_descs(conn, table_name: str, exact: bool = True) -> lis
 
 
 def _get_knowledge_col_descs(conn, table_name: str, exact: bool = True) -> dict[str, list[dict]]:
-    """Fetch column descriptions from knowledge tables, keyed by column_name."""
     try:
-        op, val = ("=", table_name) if exact else ("LIKE", f"%{table_name}%")
+        op_key = "=" if exact else "LIKE"
+        op = _SQL_OPS[op_key]
+        val = table_name if exact else f"%{table_name}%"
         cursor = conn.execute(
-            f"""SELECT column_name, source_file, description FROM column_descriptions
-               WHERE table_name {op} ? ORDER BY column_name, source_file""",
+            f"SELECT column_name, source_file, description FROM column_descriptions WHERE table_name {op} ? ORDER BY column_name, source_file",
             (val,),
         )
         result: dict[str, list[dict]] = {}
@@ -175,7 +144,6 @@ def get_field_descriptions(
     with get_db() as conn:
         results = []
 
-        # Table descriptions
         table_descs = _get_knowledge_table_descs(conn, table_name, exact=False)
         if table_descs:
             results.append(f"=== Table descriptions for '*{table_name}*' ===")
@@ -183,7 +151,6 @@ def get_field_descriptions(
                 results.append(f"  [{row['source_file']}] {row['description']}")
             results.append("")
 
-        # Column descriptions
         try:
             col_query = """SELECT column_name, source_file, description FROM column_descriptions
                            WHERE table_name LIKE ?"""
@@ -199,7 +166,7 @@ def get_field_descriptions(
             col_rows = []
 
         if col_rows:
-            results.append(f"=== Column descriptions ===")
+            results.append("=== Column descriptions ===")
             current_col = None
             for row in col_rows:
                 if row["column_name"] != current_col:
@@ -226,7 +193,6 @@ def get_table_schema(table_name: str, database_name: str | None = None) -> str:
         Table metadata and list of columns with types and attributes
     """
     with get_db() as conn:
-        # Find the table
         query = "SELECT * FROM tables WHERE table_name = ?"
         params = [table_name]
         if database_name:
@@ -271,7 +237,6 @@ def get_table_schema(table_name: str, database_name: str | None = None) -> str:
 
             results.append("")
 
-        # Append knowledge descriptions if available
         table_descs = _get_knowledge_table_descs(conn, table_name)
         col_descs = _get_knowledge_col_descs(conn, table_name)
 
@@ -322,7 +287,6 @@ def list_partition_keys(table_name: str, database_name: str | None = None) -> st
         rows = cursor.fetchall()
 
         if not rows:
-            # Check if table exists but has no partition keys
             exist_query = "SELECT 1 FROM tables WHERE table_name = ?"
             exist_params = [table_name]
             if database_name:
@@ -379,9 +343,7 @@ def get_schema_mapping(glue_database: str | None = None) -> str:
     if not rows:
         if glue_database:
             return f"No schema mapping found for Glue database '{glue_database}'"
-        return (
-            "No schema mappings found. Run sync_catalog.py with Redshift sync enabled."
-        )
+        return "No schema mappings found. Run sync_catalog.py with Redshift sync enabled."
 
     results = ["Glue Database → Redshift Schema", "=" * 40]
     for row in rows:
@@ -440,169 +402,7 @@ def find_columns(column_name: str, source: str | None = None) -> str:
     return "\n".join(results)
 
 
-def _create_redshift_connection():
-    """Create a new Redshift connection, validating required env vars first."""
-    use_saml = bool(RS_LOGIN_URL)
-
-    common_required = [
-        ("REDSHIFT_HOST", RS_HOST),
-        ("REDSHIFT_DATABASE", RS_DATABASE),
-        ("REDSHIFT_USER", RS_USER),
-    ]
-    saml_required = [("REDSHIFT_CLUSTER", RS_CLUSTER)]
-    password_required = [("REDSHIFT_PASSWORD", RS_PASSWORD)]
-
-    required = common_required + (saml_required if use_saml else password_required)
-    missing = [name for name, val in required if not val]
-    if missing:
-        raise ValueError(
-            f"Missing required env vars for Redshift connection: {', '.join(missing)}"
-        )
-
-    if use_saml:
-        return connect_saml(
-            host=RS_HOST,
-            cluster=RS_CLUSTER,
-            database=RS_DATABASE,
-            user=RS_USER,
-            login_url=RS_LOGIN_URL,
-            region=RS_REGION,
-        )
-
-    return connect_password(
-        host=RS_HOST,
-        database=RS_DATABASE,
-        user=RS_USER,
-        password=RS_PASSWORD,
-    )
-
-
-def _get_redshift_connection():
-    """Get or create a cached Redshift connection.
-
-    Reuses an existing connection if available and healthy,
-    otherwise creates a new one (which triggers browser auth if using SAML).
-    """
-    global _redshift_conn
-
-    # Check if we have a cached connection and it's still alive
-    if _redshift_conn is not None:
-        try:
-            # Quick health check - execute a simple query
-            cursor = _redshift_conn.cursor()
-            cursor.execute("SELECT 1")
-            cursor.fetchone()
-            cursor.close()
-            return _redshift_conn
-        except Exception:
-            # Connection is dead, close it and create a new one
-            try:
-                _redshift_conn.close()
-            except Exception:
-                pass
-            _redshift_conn = None
-
-    # Create a new connection (this will trigger browser auth)
-    _redshift_conn = _create_redshift_connection()
-    return _redshift_conn
-
-
-def _close_redshift_connection():
-    """Close the cached Redshift connection."""
-    global _redshift_conn
-    if _redshift_conn is not None:
-        try:
-            _redshift_conn.close()
-        except Exception:
-            pass
-        _redshift_conn = None
-
-
-def _validate_sql(sql: str) -> None:
-    """Raise ValueError if the SQL statement is not allowed."""
-    if not _ALLOWED_SQL_RE.match(sql):
-        raise ValueError(
-            "Only SELECT, WITH, SHOW, EXPLAIN, and CREATE TEMP TABLE statements are allowed. "
-            "DML (INSERT/UPDATE/DELETE) and DDL on permanent objects are blocked."
-        )
-
-
-def _format_results(columns: list[str], rows: list[tuple], truncated: bool) -> str:
-    """Format query results as a readable text table."""
-    if not rows:
-        return "Query returned 0 rows."
-
-    col_widths = [len(c) for c in columns]
-    str_rows = []
-    for row in rows:
-        str_row = [str(v) if v is not None else "NULL" for v in row]
-        for i, val in enumerate(str_row):
-            col_widths[i] = max(col_widths[i], min(len(val), 80))
-        str_rows.append(str_row)
-
-    def truncate_val(val, width):
-        return val[:width] + "…" if len(val) > width else val.ljust(width)
-
-    header = " | ".join(c.ljust(col_widths[i]) for i, c in enumerate(columns))
-    separator = "-+-".join("-" * w for w in col_widths)
-    lines = [header, separator]
-    for str_row in str_rows:
-        lines.append(
-            " | ".join(truncate_val(v, col_widths[i]) for i, v in enumerate(str_row))
-        )
-
-    footer = f"\n({len(rows)} row{'s' if len(rows) != 1 else ''})"
-    if truncated:
-        footer += f" [TRUNCATED at {RS_MAX_ROWS} rows — add LIMIT or narrow filters]"
-    lines.append(footer)
-    return "\n".join(lines)
-
-
-@mcp.tool()
-@with_timeout(RS_QUERY_TIMEOUT)
-def run_query(sql: str, max_rows: int | None = None) -> str:
-    """Execute a SQL query against Redshift and return the results.
-
-    Only SELECT, WITH (CTE), SHOW, EXPLAIN, and CREATE TEMP TABLE statements
-    are allowed. DML on permanent tables is blocked.
-
-    The connection is cached and reused across calls to avoid repeated
-    browser authentication.
-
-    Args:
-        sql: The SQL query to execute
-        max_rows: Maximum rows to return (default from REDSHIFT_MAX_ROWS env var, max 5000)
-
-    Returns:
-        Formatted query results as a text table, or a status message for DDL
-    """
-    _validate_sql(sql)
-    row_limit = min(max_rows or RS_MAX_ROWS, 5000)
-
-    try:
-        conn = _get_redshift_connection()
-        cursor = conn.cursor()
-        cursor.execute(sql)
-
-        if cursor.description is None:
-            # DDL statement (CREATE TEMP TABLE) — no result set
-            return "Statement executed successfully."
-
-        columns = [desc[0] for desc in cursor.description]
-        rows = cursor.fetchmany(row_limit + 1)
-        truncated = len(rows) > row_limit
-        if truncated:
-            rows = rows[:row_limit]
-
-        return _format_results(columns, rows, truncated)
-    except Exception as e:
-        # On error, close the connection so next call creates a fresh one
-        _close_redshift_connection()
-        return f"Query error: {e}"
-
-
 def main():
-    """Entry point for the MCP server."""
     mcp.run()
 
 

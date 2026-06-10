@@ -5,7 +5,7 @@ description = "Sync AWS Glue and Redshift table schemas into a local SQLite cata
 requires-python = ">=3.10"
 dependencies = [
     "boto3>=1.28.0",
-    "redshift-connector>=2.0.0",
+    "redshift-connector>=2.1.15",
     "requests>=2.34.2",
     "beautifulsoup4>=4.15.0",
     "lxml>=6.1.1",

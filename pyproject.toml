@@ -6,15 +6,15 @@ requires-python = ">=3.10"
 dependencies = [
     "boto3>=1.28.0",
     "redshift-connector>=2.0.0",
-    "requests>=2.28.0",
+    "requests>=2.34.2",
     "beautifulsoup4>=4.15.0",
     "lxml>=4.9.0",
     "mcp>=1.0.0",
-    "pyyaml>=6.0",
+    "pyyaml>=6.0.3",
 ]
 
 [dependency-groups]
-dev = ["pytest>=8.0", "ruff>=0.6.0"]
+dev = ["pytest>=8.0", "ruff>=0.15.16"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

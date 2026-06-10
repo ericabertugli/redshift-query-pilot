@@ -10,7 +10,7 @@ import signal
 import redshift_connector
 
 
-class SamlAuthTimeout(Exception):
+class SamlAuthTimeoutError(Exception):
     """Raised when SAML authentication times out."""
 
     pass
@@ -28,7 +28,7 @@ def connect_saml(
     """Connect to Redshift via browser-based SAML/IdP authentication."""
 
     def timeout_handler(signum, frame):
-        raise SamlAuthTimeout(
+        raise SamlAuthTimeoutError(
             f"SAML authentication timed out after {auth_timeout} seconds"
         )
 

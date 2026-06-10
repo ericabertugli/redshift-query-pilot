@@ -305,7 +305,10 @@ def main():
             parser.error(f"The following arguments are required unless --skip-redshift is set: {', '.join(missing)}")
         # Require either SAML or password auth
         if not args.redshift_login_url and not args.redshift_password:
-            parser.error("Either --redshift-login-url (SAML) or --redshift-password is required unless --skip-redshift is set")
+            parser.error(
+                "Either --redshift-login-url (SAML) or --redshift-password"
+                " is required unless --skip-redshift is set"
+            )
         # SAML requires cluster identifier
         if args.redshift_login_url and not args.redshift_cluster:
             parser.error("--redshift-cluster is required when using SAML auth (--redshift-login-url)")

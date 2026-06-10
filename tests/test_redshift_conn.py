@@ -4,12 +4,12 @@ from unittest.mock import patch
 
 import pytest
 
-from redshift_conn import SamlAuthTimeout, connect_password, connect_saml
+from redshift_conn import SamlAuthTimeoutError, connect_password, connect_saml
 
 
-class TestSamlAuthTimeout:
+class TestSamlAuthTimeoutError:
     def test_message(self):
-        exc = SamlAuthTimeout("test msg")
+        exc = SamlAuthTimeoutError("test msg")
         assert str(exc) == "test msg"
 
 
@@ -78,7 +78,7 @@ class TestConnectSaml:
 
     def test_timeout_raises_exception(self, monkeypatch):
         monkeypatch.setattr("redshift_conn.redshift_connector.connect", lambda **kw: time.sleep(10))
-        with pytest.raises(SamlAuthTimeout):
+        with pytest.raises(SamlAuthTimeoutError):
             connect_saml(
                 host="h",
                 cluster="c",

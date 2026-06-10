@@ -1,43 +1,88 @@
 import sqlite3
 
-from sync_catalog import SCHEMA_SQL, detect_storage_format, init_db
+from sync_catalog import detect_storage_format, init_db
 
 
 class TestDetectStorageFormat:
     def test_parquet_by_input_format(self):
-        table = {"StorageDescriptor": {"InputFormat": "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat", "SerdeInfo": {}}}
+        table = {
+            "StorageDescriptor": {
+                "InputFormat": "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat",
+                "SerdeInfo": {},
+            }
+        }
         assert detect_storage_format(table) == "Parquet"
 
     def test_parquet_by_serde(self):
-        table = {"StorageDescriptor": {"InputFormat": "", "SerdeInfo": {"SerializationLibrary": "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"}}}
+        table = {
+            "StorageDescriptor": {
+                "InputFormat": "",
+                "SerdeInfo": {"SerializationLibrary": "org.apache.hadoop.hive.ql.io.parquet.serde.ParquetHiveSerDe"},
+            }
+        }
         assert detect_storage_format(table) == "Parquet"
 
     def test_orc_by_input_format(self):
-        table = {"StorageDescriptor": {"InputFormat": "org.apache.hadoop.hive.ql.io.orc.OrcInputFormat", "SerdeInfo": {}}}
+        table = {
+            "StorageDescriptor": {
+                "InputFormat": "org.apache.hadoop.hive.ql.io.orc.OrcInputFormat",
+                "SerdeInfo": {},
+            }
+        }
         assert detect_storage_format(table) == "ORC"
 
     def test_orc_by_serde(self):
-        table = {"StorageDescriptor": {"InputFormat": "", "SerdeInfo": {"SerializationLibrary": "org.apache.hadoop.hive.ql.io.orc.OrcSerde"}}}
+        table = {
+            "StorageDescriptor": {
+                "InputFormat": "",
+                "SerdeInfo": {"SerializationLibrary": "org.apache.hadoop.hive.ql.io.orc.OrcSerde"},
+            }
+        }
         assert detect_storage_format(table) == "ORC"
 
     def test_avro(self):
-        table = {"StorageDescriptor": {"InputFormat": "", "SerdeInfo": {"SerializationLibrary": "org.apache.hadoop.hive.serde2.avro.AvroSerDe"}}}
+        table = {
+            "StorageDescriptor": {
+                "InputFormat": "",
+                "SerdeInfo": {"SerializationLibrary": "org.apache.hadoop.hive.serde2.avro.AvroSerDe"},
+            }
+        }
         assert detect_storage_format(table) == "Avro"
 
     def test_json(self):
-        table = {"StorageDescriptor": {"InputFormat": "", "SerdeInfo": {"SerializationLibrary": "org.openx.data.jsonserde.JsonSerDe"}}}
+        table = {
+            "StorageDescriptor": {
+                "InputFormat": "",
+                "SerdeInfo": {"SerializationLibrary": "org.openx.data.jsonserde.JsonSerDe"},
+            }
+        }
         assert detect_storage_format(table) == "JSON"
 
     def test_csv_with_lazy_serde(self):
-        table = {"StorageDescriptor": {"InputFormat": "org.apache.hadoop.mapred.TextInputFormat", "SerdeInfo": {"SerializationLibrary": "org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe"}}}
+        table = {
+            "StorageDescriptor": {
+                "InputFormat": "org.apache.hadoop.mapred.TextInputFormat",
+                "SerdeInfo": {"SerializationLibrary": "org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe"},
+            }
+        }
         assert detect_storage_format(table) == "CSV"
 
     def test_csv_with_opencsv_serde(self):
-        table = {"StorageDescriptor": {"InputFormat": "org.apache.hadoop.mapred.TextInputFormat", "SerdeInfo": {"SerializationLibrary": "org.apache.hadoop.hive.serde2.OpenCSVSerde"}}}
+        table = {
+            "StorageDescriptor": {
+                "InputFormat": "org.apache.hadoop.mapred.TextInputFormat",
+                "SerdeInfo": {"SerializationLibrary": "org.apache.hadoop.hive.serde2.OpenCSVSerde"},
+            }
+        }
         assert detect_storage_format(table) == "CSV"
 
     def test_text_plain(self):
-        table = {"StorageDescriptor": {"InputFormat": "org.apache.hadoop.mapred.TextInputFormat", "SerdeInfo": {"SerializationLibrary": "custom.serde.CustomSerDe"}}}
+        table = {
+            "StorageDescriptor": {
+                "InputFormat": "org.apache.hadoop.mapred.TextInputFormat",
+                "SerdeInfo": {"SerializationLibrary": "custom.serde.CustomSerDe"},
+            }
+        }
         assert detect_storage_format(table) == "Text"
 
     def test_unknown_input_format(self):
@@ -52,7 +97,12 @@ class TestDetectStorageFormat:
         assert detect_storage_format(table) is None
 
     def test_csv_with_text_input_and_csv_serde(self):
-        table = {"StorageDescriptor": {"InputFormat": "org.apache.hadoop.mapred.TextInputFormat", "SerdeInfo": {"SerializationLibrary": "csv.serde.CSVSerde"}}}
+        table = {
+            "StorageDescriptor": {
+                "InputFormat": "org.apache.hadoop.mapred.TextInputFormat",
+                "SerdeInfo": {"SerializationLibrary": "csv.serde.CSVSerde"},
+            }
+        }
         assert detect_storage_format(table) == "CSV"
 
 

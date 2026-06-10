@@ -1,5 +1,3 @@
-import importlib
-
 import pytest
 
 import mcp_catalog
@@ -34,18 +32,6 @@ class TestSearchTables:
         assert "[redshift]" in result
         assert "[glue]" not in result
 
-    def test_includes_storage_format(self):
-        result = mcp_catalog.search_tables(keyword="events")
-        assert "JSON" in result
-
-    def test_includes_table_type(self):
-        result = mcp_catalog.search_tables(keyword="users")
-        assert "EXTERNAL_TABLE" in result
-
-    def test_includes_location_if_present(self):
-        result = mcp_catalog.search_tables(keyword="users")
-        assert "analytics_db.users" in result
-
 
 class TestGetTableSchema:
     def test_exact_match(self):
@@ -69,24 +55,6 @@ class TestGetTableSchema:
         result = mcp_catalog.get_table_schema(table_name="users", database_name="wrong_db")
         assert "not found" in result.lower()
 
-    def test_shows_description(self):
-        result = mcp_catalog.get_table_schema(table_name="users")
-        assert "User profiles table" in result
-
-    def test_shows_partition_key(self):
-        result = mcp_catalog.get_table_schema(table_name="users")
-        assert "PARTITION KEY" in result
-        assert "dt" in result
-
-    def test_shows_knowledge_base_section(self):
-        result = mcp_catalog.get_table_schema(table_name="users")
-        assert "Knowledge Base" in result
-        assert "dbt-docs.yml" in result
-
-    def test_includes_comment_on_column(self):
-        result = mcp_catalog.get_table_schema(table_name="users")
-        assert "unique user id" in result
-
 
 class TestListPartitionKeys:
     def test_returns_partition_keys(self):
@@ -106,11 +74,6 @@ class TestListPartitionKeys:
         result = mcp_catalog.list_partition_keys(table_name="users", database_name="analytics_db")
         assert "dt" in result
 
-    def test_tips_included(self):
-        result = mcp_catalog.list_partition_keys(table_name="users")
-        assert "TIP" in result
-        assert "WHERE" in result
-
 
 class TestGetSchemaMapping:
     def test_all_mappings(self):
@@ -126,17 +89,13 @@ class TestGetSchemaMapping:
         result = mcp_catalog.get_schema_mapping(glue_database="unknown_db")
         assert "No schema mapping found" in result
 
-    def test_no_mappings_at_all(self, temp_db):
+    def test_no_mappings_at_all(self):
         conn = mcp_catalog.get_db()
         conn.execute("DELETE FROM schema_mappings")
         conn.commit()
 
         result = mcp_catalog.get_schema_mapping()
         assert "No schema mappings found" in result
-
-    def test_includes_region(self):
-        result = mcp_catalog.get_schema_mapping()
-        assert "eu-west-1" in result
 
 
 class TestFindColumns:

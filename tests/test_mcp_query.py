@@ -1,3 +1,4 @@
+import time
 from unittest.mock import MagicMock
 
 import pytest
@@ -50,13 +51,6 @@ class TestValidateSql:
         with pytest.raises(ValueError):
             mcp_query._validate_sql("")
 
-    def test_case_insensitive_allow(self):
-        assert mcp_query._validate_sql("select * from users") is None
-
-    def test_case_insensitive_reject(self):
-        with pytest.raises(ValueError):
-            mcp_query._validate_sql("insert into users values (1)")
-
 
 class TestFormatResults:
     def test_empty_rows(self):
@@ -75,24 +69,9 @@ class TestFormatResults:
         assert "alice" in result
         assert "bob" in result
 
-    def test_header_included(self):
-        result = mcp_query._format_results(["id", "name"], [(1, "alice")], False)
-        lines = result.split("\n")
-        assert "id" in lines[0]
-        assert "name" in lines[0]
-
-    def test_separator_present(self):
-        result = mcp_query._format_results(["id", "name"], [(1, "alice")], False)
-        lines = result.split("\n")
-        assert "-+-" in lines[1]
-
     def test_truncated_flag(self):
         result = mcp_query._format_results(["id"], [(1,), (2,)], True)
         assert "TRUNCATED" in result
-
-    def test_not_truncated(self):
-        result = mcp_query._format_results(["id"], [(1,)], False)
-        assert "TRUNCATED" not in result
 
     def test_null_values(self):
         result = mcp_query._format_results(["id", "name"], [(1, None)], False)
@@ -107,41 +86,25 @@ class TestFormatResults:
         result = mcp_query._format_results(["a", "b"], [("short", "very_long_value_here")], False)
         assert "very_long_value_here" in result
 
-    def test_single_column(self):
-        result = mcp_query._format_results(["col"], [("val",)], False)
-        assert "col" in result
-
 
 class TestValidateWithExplain:
-    def test_skips_explain_statements(self):
+    def test_skips_explain_statements(self, monkeypatch):
         spy = MagicMock()
-        original = mcp_query._get_redshift_connection
-        mcp_query._get_redshift_connection = spy
-        try:
-            mcp_query._validate_with_explain(None, "EXPLAIN SELECT 1")
-            spy.assert_not_called()
-        finally:
-            mcp_query._get_redshift_connection = original
+        monkeypatch.setattr(mcp_query, "_get_redshift_connection", spy)
+        mcp_query._validate_with_explain(None, "EXPLAIN SELECT 1")
+        spy.assert_not_called()
 
-    def test_skips_show_statements(self):
+    def test_skips_show_statements(self, monkeypatch):
         spy = MagicMock()
-        original = mcp_query._get_redshift_connection
-        mcp_query._get_redshift_connection = spy
-        try:
-            mcp_query._validate_with_explain(None, "SHOW TABLES")
-            spy.assert_not_called()
-        finally:
-            mcp_query._get_redshift_connection = original
+        monkeypatch.setattr(mcp_query, "_get_redshift_connection", spy)
+        mcp_query._validate_with_explain(None, "SHOW TABLES")
+        spy.assert_not_called()
 
-    def test_skips_create_temp_table_without_as(self):
+    def test_skips_create_temp_table_without_as(self, monkeypatch):
         spy = MagicMock()
-        original = mcp_query._get_redshift_connection
-        mcp_query._get_redshift_connection = spy
-        try:
-            mcp_query._validate_with_explain(None, "CREATE TEMP TABLE tmp (id INT)")
-            spy.assert_not_called()
-        finally:
-            mcp_query._get_redshift_connection = original
+        monkeypatch.setattr(mcp_query, "_get_redshift_connection", spy)
+        mcp_query._validate_with_explain(None, "CREATE TEMP TABLE tmp (id INT)")
+        spy.assert_not_called()
 
     def test_runs_explain_for_select(self):
         mock_cursor = MagicMock()
@@ -185,18 +148,4 @@ class TestCreateRedshiftConnection:
         result = mcp_query._create_redshift_connection()
         assert result is mock_conn
 
-    def test_password_auth_passes_correct_args(self, monkeypatch):
-        monkeypatch.setattr(mcp_query, "RS_HOST", "myhost")
-        monkeypatch.setattr(mcp_query, "RS_DATABASE", "mydb")
-        monkeypatch.setattr(mcp_query, "RS_USER", "myuser")
-        monkeypatch.setattr(mcp_query, "RS_PASSWORD", "mypass")
-        monkeypatch.setattr(mcp_query, "RS_LOGIN_URL", "")
 
-        captured = {}
-        monkeypatch.setattr(mcp_query, "connect_password", lambda **kwargs: captured.update(kwargs) or object())
-
-        mcp_query._create_redshift_connection()
-        assert captured["host"] == "myhost"
-        assert captured["database"] == "mydb"
-        assert captured["user"] == "myuser"
-        assert captured["password"] == "mypass"

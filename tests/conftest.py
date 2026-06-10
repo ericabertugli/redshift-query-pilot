@@ -4,6 +4,9 @@ import tempfile
 
 import pytest
 
+from sync_catalog import SCHEMA_SQL
+from sync_knowledge import KNOWLEDGE_SCHEMA_SQL
+
 
 @pytest.fixture
 def temp_db():
@@ -12,62 +15,7 @@ def temp_db():
 
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
-    conn.executescript("""
-        CREATE TABLE IF NOT EXISTS tables (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            source TEXT NOT NULL,
-            database_name TEXT NOT NULL,
-            table_name TEXT NOT NULL,
-            table_type TEXT,
-            location TEXT,
-            storage_format TEXT,
-            description TEXT,
-            last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(source, database_name, table_name)
-        );
-
-        CREATE TABLE IF NOT EXISTS columns (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            table_id INTEGER NOT NULL,
-            column_name TEXT NOT NULL,
-            data_type TEXT NOT NULL,
-            ordinal_position INTEGER,
-            is_partition_key BOOLEAN DEFAULT 0,
-            comment TEXT,
-            FOREIGN KEY (table_id) REFERENCES tables(id) ON DELETE CASCADE
-        );
-
-        CREATE TABLE IF NOT EXISTS schema_mappings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            glue_database TEXT NOT NULL,
-            redshift_schema TEXT NOT NULL,
-            catalog_name TEXT,
-            region TEXT,
-            last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(glue_database, redshift_schema)
-        );
-
-        CREATE TABLE IF NOT EXISTS table_descriptions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            database_name TEXT NOT NULL DEFAULT '',
-            table_name TEXT NOT NULL,
-            source_file TEXT NOT NULL,
-            description TEXT NOT NULL,
-            last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(database_name, table_name, source_file)
-        );
-
-        CREATE TABLE IF NOT EXISTS column_descriptions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            database_name TEXT NOT NULL DEFAULT '',
-            table_name TEXT NOT NULL,
-            column_name TEXT NOT NULL,
-            source_file TEXT NOT NULL,
-            description TEXT NOT NULL,
-            last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(database_name, table_name, column_name, source_file)
-        );
-    """)
+    conn.executescript(SCHEMA_SQL + KNOWLEDGE_SCHEMA_SQL)
     conn.commit()
     conn.close()
 

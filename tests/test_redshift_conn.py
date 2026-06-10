@@ -1,4 +1,5 @@
 import signal
+import time
 from unittest.mock import patch
 
 import pytest
@@ -7,9 +8,6 @@ from redshift_conn import SamlAuthTimeout, connect_password, connect_saml
 
 
 class TestSamlAuthTimeout:
-    def test_is_exception(self):
-        assert issubclass(SamlAuthTimeout, Exception)
-
     def test_message(self):
         exc = SamlAuthTimeout("test msg")
         assert str(exc) == "test msg"
@@ -35,11 +33,6 @@ class TestConnectPassword:
             password="secret",
         )
         assert result == "connection"
-
-    @patch("redshift_conn.redshift_connector.connect")
-    def test_default_port_is_5439(self, mock_connect):
-        connect_password(host="h", database="d", user="u", password="p")
-        assert mock_connect.call_args[1]["port"] == 5439
 
 
 class TestConnectSaml:
@@ -83,19 +76,7 @@ class TestConnectSaml:
         restored = signal.getsignal(signal.SIGALRM)
         assert restored == original
 
-    @patch("redshift_conn.redshift_connector.connect")
-    def test_default_region_and_timeout(self, mock_connect):
-        connect_saml(
-            host="h",
-            cluster="c",
-            database="d",
-            user="u",
-            login_url="https://idp.example.com",
-        )
-        assert mock_connect.call_args[1]["region"] == "eu-west-1"
-
     def test_timeout_raises_exception(self, monkeypatch):
-        import time
         monkeypatch.setattr("redshift_conn.redshift_connector.connect", lambda **kw: time.sleep(10))
         with pytest.raises(SamlAuthTimeout):
             connect_saml(

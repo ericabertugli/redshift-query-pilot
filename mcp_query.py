@@ -127,6 +127,28 @@ def _validate_sql(sql: str) -> None:
         )
 
 
+def _validate_with_explain(conn, sql: str) -> None:
+    upper = sql.strip().upper()
+
+    if upper.startswith("EXPLAIN") or upper.startswith("SHOW"):
+        return
+
+    if re.match(r"^\s*CREATE\s+TEMP(?:ORARY)?\s+TABLE\b", sql, re.IGNORECASE):
+        if not re.search(r"\bAS\s", sql, re.IGNORECASE):
+            return
+
+    cursor = conn.cursor()
+    try:
+        cursor.execute(f"EXPLAIN {sql}")
+    except Exception as e:
+        raise ValueError(f"SQL validation failed: {e}")
+    finally:
+        try:
+            cursor.close()
+        except Exception:
+            pass
+
+
 def _format_results(columns: list[str], rows: list[tuple], truncated: bool) -> str:
     if not rows:
         return "Query returned 0 rows."
@@ -165,6 +187,9 @@ def run_query(sql: str, max_rows: int | None = None) -> str:
     Only SELECT, WITH (CTE), SHOW, EXPLAIN, and CREATE TEMP TABLE statements
     are allowed. DML on permanent tables is blocked.
 
+    SQL is automatically validated with EXPLAIN before execution to catch
+    errors early and avoid wasting time on invalid queries.
+
     The connection is cached and reused across calls to avoid repeated
     browser authentication.
 
@@ -181,6 +206,7 @@ def run_query(sql: str, max_rows: int | None = None) -> str:
     row_limit = min(max_rows or RS_MAX_ROWS, 5000)
 
     conn = _get_redshift_connection()
+    _validate_with_explain(conn, sql)
     cursor = conn.cursor()
     try:
         cursor.execute(sql)

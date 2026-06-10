@@ -14,6 +14,16 @@ It's an AI Agent Skill designed to integrate with your favorite LLM-powered codi
 
 Instead of manually looking up table schemas or remembering Spectrum quirks, just ask your AI assistant to write a query and it will automatically look up the relevant schemas and apply best practices.
 
+## The idea behind it
+
+A recipe for writing an LLM agent that writes SQL:
+
+1. **Schema + data understanding** (done) — Provide a tool to read the data catalog so the LLM knows tables, columns, types, and partitions.
+2. **Enforce SQL validation before execution** (done) — `run_query()` automatically runs `EXPLAIN` (or equivalent) first. Validation must live in tooling, not in prompts.
+3. **Provide SQL dialect / database-specific guidance** (done) — Instead of generic SQL docs, give the LLM only what matters for *your* engine. This repo embeds it in a [SKILL file](./SKILL.md) focused on Redshift Spectrum specifics. Other option: get_sql_guidelines() tool.
+4. **Provide example queries** (done) — Ideally via RAG based on the user's question; otherwise examples can live in the skill or a tool. This repo includes a few examples in the SKILL file. A RAG-based approach would be an improvement for production use.
+5. **Add a semantic layer** (not done) — A tool or MCP server that explains to the LLM how to compute business metrics (e.g., dbt Semantic Layer).
+
 ## Usage
 
 Once configured, simply ask your AI assistant to write SQL queries. It will automatically look up schemas and apply Spectrum best practices.
@@ -251,6 +261,8 @@ claude mcp add mcp_query --scope user \
 ```
 
 Restart your client after registering.
+
+> **Why not use the official AWS Redshift MCP server?** The [`awslabs/redshift-mcp-server`](https://github.com/awslabs/mcp/tree/main/src/redshift-mcp-server) uses the Redshift Data API (IAM-based auth) and does not support SAML/Okta authentication or `CREATE TEMP TABLE` across statements in a session. This server uses `redshift-connector` for direct database access with SAML support, EXPLAIN-based pre-validation, and full temp-table compatibility.
 
 ## Technical Reference
 

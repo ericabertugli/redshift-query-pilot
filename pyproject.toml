@@ -13,6 +13,12 @@ dependencies = [
     "pyyaml>=6.0",
 ]
 
+[dependency-groups]
+dev = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [project.scripts]
 schema-sync = "sync_catalog:main"
 mcp_catalog = "mcp_catalog:main"

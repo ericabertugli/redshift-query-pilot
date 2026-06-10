@@ -110,7 +110,10 @@ def _get_knowledge_col_descs(conn, table_name: str, exact: bool = True) -> dict[
         op = _SQL_OPS[op_key]
         val = table_name if exact else f"%{table_name}%"
         cursor = conn.execute(
-            f"SELECT column_name, source_file, description FROM column_descriptions WHERE table_name {op} ? ORDER BY column_name, source_file",
+            f"""SELECT column_name, source_file, description
+                  FROM column_descriptions
+                 WHERE table_name {op} ?
+              ORDER BY column_name, source_file""",
             (val,),
         )
         result: dict[str, list[dict]] = {}
@@ -118,7 +121,9 @@ def _get_knowledge_col_descs(conn, table_name: str, exact: bool = True) -> dict[
             col = row["column_name"]
             if col not in result:
                 result[col] = []
-            result[col].append({"source_file": row["source_file"], "description": row["description"]})
+            result[col].append(
+                {"source_file": row["source_file"], "description": row["description"]}
+            )
         return result
     except sqlite3.OperationalError:
         return {}
@@ -232,7 +237,8 @@ def get_table_schema(table_name: str, database_name: str | None = None) -> str:
                 partition_marker = " [PARTITION KEY]" if col["is_partition_key"] else ""
                 comment = f" -- {col['comment']}" if col["comment"] else ""
                 results.append(
-                    f"  {col['ordinal_position']:3}. {col['column_name']}: {col['data_type']}{partition_marker}{comment}"
+                    f"  {col['ordinal_position']:3}. {col['column_name']}: {col['data_type']}"
+                    f"{partition_marker}{comment}"
                 )
 
             results.append("")
@@ -296,7 +302,10 @@ def list_partition_keys(table_name: str, database_name: str | None = None) -> st
             exists = cursor.fetchone()
 
             if exists:
-                return f"Table '{table_name}' has no partition keys (likely a Redshift internal table or unpartitioned Spectrum table)"
+                return (
+                    f"Table '{table_name}' has no partition keys"
+                    " (likely a Redshift internal table or unpartitioned Spectrum table)"
+                )
             return f"Table '{table_name}' not found"
 
     results = [f"Partition keys for {table_name}:", ""]
@@ -396,7 +405,8 @@ def find_columns(column_name: str, source: str | None = None) -> str:
     for row in rows:
         partition = " [PK]" if row["is_partition_key"] else ""
         results.append(
-            f"[{row['source']}] {row['database_name']}.{row['table_name']}.{row['column_name']}: {row['data_type']}{partition}"
+            f"[{row['source']}] {row['database_name']}.{row['table_name']}."
+            f"{row['column_name']}: {row['data_type']}{partition}"
         )
 
     return "\n".join(results)

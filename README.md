@@ -30,7 +30,7 @@ Once configured, simply ask your AI assistant to write SQL queries. It will auto
 
 Example:
 ```
-You: /dwh Write a query to get daily order counts for last week
+You: Write a query to get daily order counts for last week
 
 AI: [Looks up schema for orders table]
     [Checks partition keys: year, month, day]
@@ -96,7 +96,7 @@ The skill teaches the AI assistant Redshift/Spectrum SQL syntax, partition optim
 mkdir -p ~/.claude/skills/dwh
 cp /path/to/redshift-query-pilot/SKILL.md ~/.claude/skills/dwh/SKILL.md
 ```
-Claude Code auto-discovers skills from their descriptions. Invoke with `/dwh` or just describe your query task.
+Claude Code auto-discovers skills from their description metadata. The skill activates automatically when your request relates to Redshift or Spectrum queries.
 
 **opencode:**
 ```bash

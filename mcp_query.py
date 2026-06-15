@@ -3,12 +3,12 @@
 
 import os
 import re
-import signal
-from functools import wraps
 
+import redshift_connector
 from mcp.server.fastmcp import FastMCP
 
 from redshift_conn import connect_password, connect_saml
+from timeout import with_timeout
 
 RS_HOST = os.environ.get("REDSHIFT_HOST", "")
 RS_CLUSTER = os.environ.get("REDSHIFT_CLUSTER", "")
@@ -30,28 +30,6 @@ mcp = FastMCP("mcp_query")
 _redshift_conn = None
 
 
-class ToolTimeoutError(Exception):
-    pass
-
-
-def with_timeout(seconds: int):
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            def timeout_handler(signum, frame):
-                raise ToolTimeoutError(f"Operation timed out after {seconds} seconds")
-            old_handler = signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(seconds)
-            try:
-                result = func(*args, **kwargs)
-            finally:
-                signal.alarm(0)
-                signal.signal(signal.SIGALRM, old_handler)
-            return result
-        return wrapper
-    return decorator
-
-
 def _create_redshift_connection():
     use_saml = bool(RS_LOGIN_URL)
 
@@ -66,9 +44,7 @@ def _create_redshift_connection():
     required = common_required + (saml_required if use_saml else password_required)
     missing = [name for name, val in required if not val]
     if missing:
-        raise ValueError(
-            f"Missing required env vars for Redshift connection: {', '.join(missing)}"
-        )
+        raise ValueError(f"Missing required env vars for Redshift connection: {', '.join(missing)}")
 
     if use_saml:
         return connect_saml(
@@ -98,10 +74,10 @@ def _get_redshift_connection():
             cursor.fetchone()
             cursor.close()
             return _redshift_conn
-        except Exception:
+        except redshift_connector.Error:
             try:
                 _redshift_conn.close()
-            except Exception:
+            except redshift_connector.Error:
                 pass
             _redshift_conn = None
 
@@ -114,7 +90,7 @@ def _close_redshift_connection():
     if _redshift_conn is not None:
         try:
             _redshift_conn.close()
-        except Exception:
+        except redshift_connector.Error:
             pass
         _redshift_conn = None
 
@@ -140,12 +116,12 @@ def _validate_with_explain(conn, sql: str) -> None:
     cursor = conn.cursor()
     try:
         cursor.execute(f"EXPLAIN {sql}")
-    except Exception as e:
+    except redshift_connector.Error as e:
         raise ValueError(f"SQL validation failed: {e}")
     finally:
         try:
             cursor.close()
-        except Exception:
+        except redshift_connector.Error:
             pass
 
 
@@ -168,9 +144,7 @@ def _format_results(columns: list[str], rows: list[tuple], truncated: bool) -> s
     separator = "-+-".join("-" * w for w in col_widths)
     lines = [header, separator]
     for str_row in str_rows:
-        lines.append(
-            " | ".join(truncate_val(v, col_widths[i]) for i, v in enumerate(str_row))
-        )
+        lines.append(" | ".join(truncate_val(v, col_widths[i]) for i, v in enumerate(str_row)))
 
     footer = f"\n({len(rows)} row{'s' if len(rows) != 1 else ''})"
     if truncated:
@@ -223,13 +197,13 @@ def run_query(sql: str, max_rows: int | None = None) -> str:
 
         conn.commit()
         return _format_results(columns, rows, truncated)
-    except Exception as e:
+    except redshift_connector.Error as e:
         _close_redshift_connection()
         return f"Query error: {e}"
     finally:
         try:
             cursor.close()
-        except Exception:
+        except redshift_connector.Error:
             pass
 
 

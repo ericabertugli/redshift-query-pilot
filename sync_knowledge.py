@@ -53,9 +53,7 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _parse_yaml_file(
-    path: Path, rel_path: str
-) -> tuple[list[tuple], list[tuple]]:
+def _parse_yaml_file(path: Path, rel_path: str) -> tuple[list[tuple], list[tuple]]:
     """Parse a single knowledge YAML file.
 
     Returns (table_rows, column_rows) where each row is a tuple ready for DB insert.

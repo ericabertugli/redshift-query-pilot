@@ -5,15 +5,13 @@ Two authentication approaches:
 - connect_password(): direct user/password connection.
 """
 
-import signal
-
 import redshift_connector
 
+from timeout import ToolTimeoutError, with_timeout
 
-class SamlAuthTimeoutError(Exception):
-    """Raised when SAML authentication times out."""
-
-    pass
+# Keep backward-compatible alias so existing callers importing
+# ``SamlAuthTimeoutError`` from this module keep working.
+SamlAuthTimeoutError = ToolTimeoutError
 
 
 def connect_saml(
@@ -27,14 +25,8 @@ def connect_saml(
 ) -> redshift_connector.Connection:
     """Connect to Redshift via browser-based SAML/IdP authentication."""
 
-    def timeout_handler(signum, frame):
-        raise SamlAuthTimeoutError(
-            f"SAML authentication timed out after {auth_timeout} seconds"
-        )
-
-    old_handler = signal.signal(signal.SIGALRM, timeout_handler)
-    signal.alarm(auth_timeout)
-    try:
+    @with_timeout(auth_timeout)
+    def _connect():
         return redshift_connector.connect(
             iam=True,
             host=host,
@@ -46,9 +38,8 @@ def connect_saml(
             credentials_provider="BrowserSamlCredentialsProvider",
             login_url=login_url,
         )
-    finally:
-        signal.alarm(0)
-        signal.signal(signal.SIGALRM, old_handler)
+
+    return _connect()
 
 
 def connect_password(

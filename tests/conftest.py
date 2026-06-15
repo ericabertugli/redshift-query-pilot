@@ -1,6 +1,7 @@
 import os
 import sqlite3
 import tempfile
+from contextlib import closing
 
 import pytest
 
@@ -13,11 +14,10 @@ def temp_db():
     db_fd, db_path = tempfile.mkstemp(suffix=".db")
     os.close(db_fd)
 
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    conn.executescript(SCHEMA_SQL + KNOWLEDGE_SCHEMA_SQL)
-    conn.commit()
-    conn.close()
+    with closing(sqlite3.connect(db_path)) as conn:
+        conn.row_factory = sqlite3.Row
+        conn.executescript(SCHEMA_SQL + KNOWLEDGE_SCHEMA_SQL)
+        conn.commit()
 
     yield db_path
 
@@ -29,9 +29,9 @@ def temp_db():
 
 @pytest.fixture
 def sample_catalog(temp_db):
-    conn = sqlite3.connect(temp_db)
-    conn.row_factory = sqlite3.Row
-    conn.executescript("""
+    with closing(sqlite3.connect(temp_db)) as conn:
+        conn.row_factory = sqlite3.Row
+        conn.executescript("""
         INSERT INTO tables (source, database_name, table_name, table_type, storage_format, description)
         VALUES ('glue', 'analytics_db', 'users', 'EXTERNAL_TABLE', 'Parquet', 'User profiles table');
 
@@ -74,8 +74,7 @@ def sample_catalog(temp_db):
         INSERT INTO column_descriptions (table_name, column_name, source_file, description)
         VALUES ('users', 'email', 'dbt-docs.yml', 'User email address (PII)');
     """)
-    conn.commit()
-    conn.close()
+        conn.commit()
     return temp_db
 
 

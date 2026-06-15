@@ -79,9 +79,7 @@ class TestParseYamlFile:
         assert len(table_rows) == 0
 
     def test_skips_non_dict_columns(self, tmp_path):
-        content = {
-            "tables": [{"name": "users", "description": "desc", "columns": ["not_a_dict"]}]
-        }
+        content = {"tables": [{"name": "users", "description": "desc", "columns": ["not_a_dict"]}]}
         p = tmp_path / "bad_col.yml"
         p.write_text(yaml.dump(content))
 
@@ -89,9 +87,7 @@ class TestParseYamlFile:
         assert len(col_rows) == 0
 
     def test_skips_column_without_name(self, tmp_path):
-        content = {
-            "tables": [{"name": "users", "description": "desc", "columns": [{"description": "just a desc"}]}]
-        }
+        content = {"tables": [{"name": "users", "description": "desc", "columns": [{"description": "just a desc"}]}]}
         p = tmp_path / "col_no_name.yml"
         p.write_text(yaml.dump(content))
 
@@ -99,9 +95,7 @@ class TestParseYamlFile:
         assert len(col_rows) == 0
 
     def test_skips_column_without_description(self, tmp_path):
-        content = {
-            "tables": [{"name": "users", "description": "desc", "columns": [{"name": "user_id"}]}]
-        }
+        content = {"tables": [{"name": "users", "description": "desc", "columns": [{"name": "user_id"}]}]}
         p = tmp_path / "col_no_desc.yml"
         p.write_text(yaml.dump(content))
 
@@ -175,9 +169,7 @@ class TestSyncKnowledge:
         sync_knowledge(db_path=temp_db)
 
         conn = sqlite3.connect(temp_db)
-        desc = conn.execute(
-            "SELECT description FROM table_descriptions WHERE table_name='users'"
-        ).fetchone()[0]
+        desc = conn.execute("SELECT description FROM table_descriptions WHERE table_name='users'").fetchone()[0]
         assert desc == "Updated"
         conn.close()
 

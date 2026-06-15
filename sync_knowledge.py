@@ -10,6 +10,7 @@ import argparse
 import logging
 import os
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -53,9 +54,7 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _parse_yaml_file(
-    path: Path, rel_path: str
-) -> tuple[list[tuple], list[tuple]]:
+def _parse_yaml_file(path: Path, rel_path: str) -> tuple[list[tuple], list[tuple]]:
     """Parse a single knowledge YAML file.
 
     Returns (table_rows, column_rows) where each row is a tuple ready for DB insert.
@@ -103,44 +102,44 @@ def sync_knowledge(db_path: str = str(DB_PATH)) -> tuple[int, int]:
         logger.info("No knowledge/ directory found, nothing to sync.")
         return 0, 0
 
-    conn = sqlite3.connect(db_path, timeout=10.0)
-    conn.row_factory = sqlite3.Row
-    conn.executescript(KNOWLEDGE_SCHEMA_SQL)
+    with closing(sqlite3.connect(db_path, timeout=10.0)) as conn:
+        conn.row_factory = sqlite3.Row
+        conn.executescript(KNOWLEDGE_SCHEMA_SQL)
 
-    now = _now_iso()
-    table_count = 0
-    col_count = 0
+        now = _now_iso()
+        table_count = 0
+        col_count = 0
 
-    for yml_file in sorted(KNOWLEDGE_DIR.glob("*.yml")):
-        rel_path = yml_file.name
-        table_rows, col_rows = _parse_yaml_file(yml_file, rel_path)
+        for yml_file in sorted(KNOWLEDGE_DIR.glob("*.yml")):
+            rel_path = yml_file.name
+            table_rows, col_rows = _parse_yaml_file(yml_file, rel_path)
 
-        for db_name, table_name, src_file, desc in table_rows:
-            conn.execute(
-                """INSERT INTO table_descriptions
-                   (database_name, table_name, source_file, description, last_synced)
-                   VALUES (?, ?, ?, ?, ?)
-                   ON CONFLICT(database_name, table_name, source_file)
-                   DO UPDATE SET description=excluded.description,
-                                 last_synced=excluded.last_synced""",
-                (db_name, table_name, src_file, desc, now),
-            )
-            table_count += 1
+            for db_name, table_name, src_file, desc in table_rows:
+                conn.execute(
+                    """INSERT INTO table_descriptions
+                       (database_name, table_name, source_file, description, last_synced)
+                       VALUES (?, ?, ?, ?, ?)
+                       ON CONFLICT(database_name, table_name, source_file)
+                       DO UPDATE SET description=excluded.description,
+                                      last_synced=excluded.last_synced""",
+                    (db_name, table_name, src_file, desc, now),
+                )
+                table_count += 1
 
-        for db_name, table_name, col_name, src_file, desc in col_rows:
-            conn.execute(
-                """INSERT INTO column_descriptions
-                   (database_name, table_name, column_name, source_file, description, last_synced)
-                   VALUES (?, ?, ?, ?, ?, ?)
-                   ON CONFLICT(database_name, table_name, column_name, source_file)
-                   DO UPDATE SET description=excluded.description,
-                                 last_synced=excluded.last_synced""",
-                (db_name, table_name, col_name, src_file, desc, now),
-            )
-            col_count += 1
+            for db_name, table_name, col_name, src_file, desc in col_rows:
+                conn.execute(
+                    """INSERT INTO column_descriptions
+                       (database_name, table_name, column_name, source_file, description, last_synced)
+                       VALUES (?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(database_name, table_name, column_name, source_file)
+                       DO UPDATE SET description=excluded.description,
+                                      last_synced=excluded.last_synced""",
+                    (db_name, table_name, col_name, src_file, desc, now),
+                )
+                col_count += 1
 
-    conn.commit()
-    conn.close()
+        conn.commit()
+
     logger.info("Synced %d table descriptions, %d column descriptions.", table_count, col_count)
     return table_count, col_count
 

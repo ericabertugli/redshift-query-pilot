@@ -4,6 +4,7 @@
 import argparse
 import logging
 import sqlite3
+from contextlib import closing
 
 import boto3
 
@@ -330,8 +331,7 @@ def main():
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
 
-    conn = init_db(args.output)
-    try:
+    with closing(init_db(args.output)) as conn:
         if not args.skip_glue:
             sync_glue(conn, args.glue_database)
         if not args.skip_redshift:
@@ -346,8 +346,6 @@ def main():
                 args.redshift_password,
                 args.saml_timeout,
             )
-    finally:
-        conn.close()
 
     logger.info("Catalog written to %s", args.output)
 

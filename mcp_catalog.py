@@ -412,6 +412,91 @@ def find_columns(column_name: str, source: str | None = None) -> str:
     return "\n".join(results)
 
 
+@mcp.tool()
+@with_timeout()
+def list_tables(
+    source: str | None = None,
+    database_name: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> str:
+    """List all tables in the catalog with pagination support.
+
+    Use this to browse available tables. Returns a page of results and
+    indicates whether more tables exist.
+
+    Args:
+        source: Optional filter by source ('glue' for Spectrum, 'redshift' for internal tables)
+        database_name: Optional filter by database/schema name
+        limit: Maximum number of tables to return (max 200, default 50)
+        offset: Number of tables to skip for pagination (default 0)
+
+    Returns:
+        Paginated list of tables with source, database, type, format, and a
+        pagination hint if there are more results beyond the current page
+    """
+    with get_db() as conn:
+        count_query = "SELECT COUNT(*) AS total FROM tables WHERE 1=1"
+        data_query = """
+            SELECT source, database_name, table_name, table_type, storage_format, location
+            FROM tables WHERE 1=1
+        """
+        params: list[str | int] = []
+
+        if source:
+            clause = " AND source = ?"
+            count_query += clause
+            data_query += clause
+            params.append(source)
+
+        if database_name:
+            clause = " AND database_name = ?"
+            count_query += clause
+            data_query += clause
+            params.append(database_name)
+
+        limit = min(max(limit, 1), 200)
+
+        count_params = list(params)
+        total = conn.execute(count_query, count_params).fetchone()["total"]
+
+        data_query += " ORDER BY source, database_name, table_name"
+        data_query += " LIMIT ? OFFSET ?"
+        page_params = list(params) + [limit, offset]
+
+        rows = conn.execute(data_query, page_params).fetchall()
+
+    if not rows:
+        msg = "No tables found"
+        if source:
+            msg += f" for source '{source}'"
+        if database_name:
+            msg += f" in database '{database_name}'"
+        return msg
+
+    results = [
+        f"Tables ({offset + 1}–{offset + len(rows)} of {total}):",
+        "",
+    ]
+    for row in rows:
+        line = f"[{row['source']}] {row['database_name']}.{row['table_name']}"
+        if row["table_type"]:
+            line += f" ({row['table_type']})"
+        if row["storage_format"]:
+            line += f" - {row['storage_format']}"
+        results.append(line)
+
+    remaining = total - (offset + len(rows))
+    if remaining > 0:
+        results.append("")
+        results.append(
+            f"* {remaining} more table(s) available. "
+            f"Call list_tables with offset={offset + limit} to see the next page."
+        )
+
+    return "\n".join(results)
+
+
 def main():
     mcp.run()
 

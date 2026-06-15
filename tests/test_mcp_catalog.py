@@ -145,3 +145,50 @@ class TestGetFieldDescriptions:
     def test_partial_table_match(self):
         result = mcp_catalog.get_field_descriptions(table_name="use")
         assert "users" in result or "User" in result
+
+
+class TestListTables:
+    def test_lists_all(self):
+        result = mcp_catalog.list_tables()
+        assert "3 of 3" in result
+        assert "[glue] analytics_db.users" in result
+        assert "[redshift] public.orders" in result
+        assert "[glue] analytics_db.events" in result
+
+    def test_with_source_filter(self):
+        result = mcp_catalog.list_tables(source="glue")
+        assert "2 of 2" in result
+        assert "[glue]" in result
+        assert "[redshift]" not in result
+
+    def test_with_database_filter(self):
+        result = mcp_catalog.list_tables(database_name="analytics_db")
+        assert "2 of 2" in result
+        assert "analytics_db" in result
+        assert "public" not in result
+
+    def test_no_match(self):
+        result = mcp_catalog.list_tables(source="glue", database_name="ghost")
+        assert "No tables found" in result
+
+    def test_pagination_limit(self):
+        result = mcp_catalog.list_tables(limit=2)
+        assert "1–2 of 3" in result
+        assert "1 more table(s) available" in result
+        assert "offset=2" in result
+
+    def test_pagination_offset(self):
+        result = mcp_catalog.list_tables(limit=2, offset=2)
+        assert "3–3 of 3" in result
+        assert "1 more table(s)" not in result
+
+    def test_limit_clamped_to_max(self):
+        """Values above 200 should be clamped down."""
+        result = mcp_catalog.list_tables(limit=999)
+        assert "3 of 3" in result
+
+    def test_limit_clamped_to_min(self):
+        """Values below 1 should be clamped to 1."""
+        result = mcp_catalog.list_tables(limit=0)
+        assert "1 of 3" in result
+        assert "2 more table(s)" in result

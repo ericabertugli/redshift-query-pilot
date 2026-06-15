@@ -3,6 +3,7 @@
 
 import os
 import re
+from contextlib import closing
 
 import redshift_connector
 from mcp.server.fastmcp import FastMCP
@@ -113,16 +114,11 @@ def _validate_with_explain(conn, sql: str) -> None:
         if not re.search(r"\bAS\s", sql, re.IGNORECASE):
             return
 
-    cursor = conn.cursor()
-    try:
-        cursor.execute(f"EXPLAIN {sql}")
-    except redshift_connector.Error as e:
-        raise ValueError(f"SQL validation failed: {e}")
-    finally:
+    with closing(conn.cursor()) as cursor:
         try:
-            cursor.close()
-        except redshift_connector.Error:
-            pass
+            cursor.execute(f"EXPLAIN {sql}")
+        except redshift_connector.Error as e:
+            raise ValueError(f"SQL validation failed: {e}")
 
 
 def _format_results(columns: list[str], rows: list[tuple], truncated: bool) -> str:
@@ -181,30 +177,25 @@ def run_query(sql: str, max_rows: int | None = None) -> str:
 
     conn = _get_redshift_connection()
     _validate_with_explain(conn, sql)
-    cursor = conn.cursor()
-    try:
-        cursor.execute(sql)
-
-        if cursor.description is None:
-            conn.commit()
-            return "Statement executed successfully."
-
-        columns = [desc[0] for desc in cursor.description]
-        rows = cursor.fetchmany(row_limit + 1)
-        truncated = len(rows) > row_limit
-        if truncated:
-            rows = rows[:row_limit]
-
-        conn.commit()
-        return _format_results(columns, rows, truncated)
-    except redshift_connector.Error as e:
-        _close_redshift_connection()
-        return f"Query error: {e}"
-    finally:
+    with closing(conn.cursor()) as cursor:
         try:
-            cursor.close()
+            cursor.execute(sql)
+
+            if cursor.description is None:
+                conn.commit()
+                return "Statement executed successfully."
+
+            columns = [desc[0] for desc in cursor.description]
+            rows = cursor.fetchmany(row_limit + 1)
+            truncated = len(rows) > row_limit
+            if truncated:
+                rows = rows[:row_limit]
+
+            conn.commit()
+            return _format_results(columns, rows, truncated)
         except redshift_connector.Error:
-            pass
+            _close_redshift_connection()
+            raise
 
 
 def main():

@@ -1,7 +1,7 @@
 [project]
-name = "schema-sync"
+name = "redshift-query-pilot"
 version = "0.1.0"
-description = "Sync AWS Glue and Redshift table schemas into a local SQLite catalog"
+description = "Redshift Query Pilot — AI agent skill for Redshift/Spectrum SQL queries"
 requires-python = ">=3.10"
 dependencies = [
     "boto3>=1.43.27",
@@ -30,7 +30,7 @@ select = ["E", "F", "I", "W", "UP", "N"]
 quote-style = "double"
 
 [project.scripts]
-schema-sync = "sync_catalog:main"
+redshift-query-pilot = "sync_catalog:main"
 mcp_catalog = "mcp_catalog:main"
 mcp_query = "mcp_query:main"
 knowledge-sync = "sync_knowledge:main"

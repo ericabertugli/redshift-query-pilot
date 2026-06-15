@@ -104,28 +104,32 @@ def sync_glue(conn, database):
                 }
 
                 for i, col in enumerate(sd.get("Columns", []), start=1):
-                    table_info["columns"].append({
-                        "name": col["Name"],
-                        "type": col["Type"],
-                        "position": i,
-                        "is_partition": False,
-                        "comment": col.get("Comment"),
-                    })
+                    table_info["columns"].append(
+                        {
+                            "name": col["Name"],
+                            "type": col["Type"],
+                            "position": i,
+                            "is_partition": False,
+                            "comment": col.get("Comment"),
+                        }
+                    )
 
                 partition_keys = table_def.get("PartitionKeys", [])
                 offset = len(table_info["columns"])
                 for i, pk in enumerate(partition_keys, start=1):
-                    table_info["columns"].append({
-                        "name": pk["Name"],
-                        "type": pk["Type"],
-                        "position": offset + i,
-                        "is_partition": True,
-                        "comment": pk.get("Comment"),
-                    })
+                    table_info["columns"].append(
+                        {
+                            "name": pk["Name"],
+                            "type": pk["Type"],
+                            "position": offset + i,
+                            "is_partition": True,
+                            "comment": pk.get("Comment"),
+                        }
+                    )
 
                 tables_data.append(table_info)
                 logger.debug("Fetched Glue table: %s.%s", database, table_info["name"])
-            except Exception:
+            except (KeyError, TypeError, sqlite3.Error):
                 logger.warning(
                     "Failed to process Glue table: %s",
                     table_def.get("Name", "<unknown>"),
@@ -140,8 +144,14 @@ def sync_glue(conn, database):
         cursor.execute(
             """INSERT INTO tables (source, database_name, table_name, table_type, location, storage_format, description)
                VALUES ('glue', ?, ?, ?, ?, ?, ?)""",
-            (database, table_info["name"], table_info["table_type"],
-             table_info["location"], table_info["storage_format"], table_info["description"]),
+            (
+                database,
+                table_info["name"],
+                table_info["table_type"],
+                table_info["location"],
+                table_info["storage_format"],
+                table_info["description"],
+            ),
         )
         table_id = cursor.lastrowid
         for col in table_info["columns"]:
@@ -208,11 +218,13 @@ def sync_redshift(conn, host, cluster, database, db_user, region, login_url, pas
 
     columns_by_table = {}
     for schema, table, col_name, dtype, pos in rs_columns:
-        columns_by_table.setdefault((schema, table), []).append({
-            "name": col_name,
-            "type": dtype,
-            "position": pos,
-        })
+        columns_by_table.setdefault((schema, table), []).append(
+            {
+                "name": col_name,
+                "type": dtype,
+                "position": pos,
+            }
+        )
 
     db_cursor = conn.cursor()
     db_cursor.execute("DELETE FROM columns WHERE table_id IN (SELECT id FROM tables WHERE source = 'redshift')")
@@ -235,7 +247,7 @@ def sync_redshift(conn, host, cluster, database, db_user, region, login_url, pas
                 )
             count += 1
             logger.debug("Synced Redshift table: %s.%s", schema, table_name)
-        except Exception:
+        except (KeyError, TypeError, sqlite3.Error):
             logger.warning("Failed to process Redshift table: %s.%s", schema, table_name, exc_info=True)
 
     conn.commit()
@@ -263,7 +275,7 @@ def sync_redshift(conn, host, cluster, database, db_user, region, login_url, pas
             )
             mapping_count += 1
             logger.debug("Synced schema mapping: %s -> %s", glue_database, redshift_schema)
-        except Exception:
+        except (KeyError, TypeError, sqlite3.Error):
             logger.warning("Failed to process schema mapping: %s -> %s", glue_database, redshift_schema, exc_info=True)
 
     conn.commit()
@@ -286,8 +298,9 @@ def main():
     # Auth approach 2 (User/Password): --redshift-password for direct connection
     parser.add_argument("--redshift-login-url", help="SAML IdP login URL for browser-based auth")
     parser.add_argument("--redshift-password", help="Redshift password for user/password auth")
-    parser.add_argument("--saml-timeout", type=int, default=120,
-                        help="Timeout in seconds for SAML authentication (default: 120)")
+    parser.add_argument(
+        "--saml-timeout", type=int, default=120, help="Timeout in seconds for SAML authentication (default: 120)"
+    )
     args = parser.parse_args()
 
     # Validate required arguments based on skip flags
@@ -306,8 +319,7 @@ def main():
         # Require either SAML or password auth
         if not args.redshift_login_url and not args.redshift_password:
             parser.error(
-                "Either --redshift-login-url (SAML) or --redshift-password"
-                " is required unless --skip-redshift is set"
+                "Either --redshift-login-url (SAML) or --redshift-password is required unless --skip-redshift is set"
             )
         # SAML requires cluster identifier
         if args.redshift_login_url and not args.redshift_cluster:
@@ -323,10 +335,17 @@ def main():
         if not args.skip_glue:
             sync_glue(conn, args.glue_database)
         if not args.skip_redshift:
-            sync_redshift(conn, args.redshift_host, args.redshift_cluster,
-                          args.redshift_database, args.redshift_user,
-                          args.redshift_region, args.redshift_login_url,
-                          args.redshift_password, args.saml_timeout)
+            sync_redshift(
+                conn,
+                args.redshift_host,
+                args.redshift_cluster,
+                args.redshift_database,
+                args.redshift_user,
+                args.redshift_region,
+                args.redshift_login_url,
+                args.redshift_password,
+                args.saml_timeout,
+            )
     finally:
         conn.close()
 

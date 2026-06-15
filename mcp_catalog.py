@@ -2,39 +2,17 @@
 """MCP server exposing the schema catalog — no Redshift dependency."""
 
 import os
-import signal
 import sqlite3
-from functools import wraps
 from pathlib import Path
 
 from mcp.server.fastmcp import FastMCP
+
+from timeout import with_timeout
 
 DB_PATH = os.environ.get("CATALOG_DB_PATH", Path(__file__).parent / "catalog.db")
 TOOL_TIMEOUT = int(os.environ.get("MCP_TOOL_TIMEOUT", 30))
 
 mcp = FastMCP("mcp_catalog")
-
-
-class ToolTimeoutError(Exception):
-    pass
-
-
-def with_timeout(seconds: int = TOOL_TIMEOUT):
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            def timeout_handler(signum, frame):
-                raise ToolTimeoutError(f"Operation timed out after {seconds} seconds")
-            old_handler = signal.signal(signal.SIGALRM, timeout_handler)
-            signal.alarm(seconds)
-            try:
-                result = func(*args, **kwargs)
-            finally:
-                signal.alarm(0)
-                signal.signal(signal.SIGALRM, old_handler)
-            return result
-        return wrapper
-    return decorator
 
 
 def get_db():
@@ -44,7 +22,7 @@ def get_db():
 
 
 @mcp.tool()
-@with_timeout()
+@with_timeout(TOOL_TIMEOUT)
 def search_tables(keyword: str, source: str | None = None) -> str:
     """Search for tables by name or keyword.
 
@@ -121,19 +99,15 @@ def _get_knowledge_col_descs(conn, table_name: str, exact: bool = True) -> dict[
             col = row["column_name"]
             if col not in result:
                 result[col] = []
-            result[col].append(
-                {"source_file": row["source_file"], "description": row["description"]}
-            )
+            result[col].append({"source_file": row["source_file"], "description": row["description"]})
         return result
     except sqlite3.OperationalError:
         return {}
 
 
 @mcp.tool()
-@with_timeout()
-def get_field_descriptions(
-    table_name: str, column_name: str | None = None
-) -> str:
+@with_timeout(TOOL_TIMEOUT)
+def get_field_descriptions(table_name: str, column_name: str | None = None) -> str:
     """Get knowledge-base descriptions for a table and its columns.
 
     Searches across all knowledge YAML files and returns descriptions
@@ -186,7 +160,7 @@ def get_field_descriptions(
 
 
 @mcp.tool()
-@with_timeout()
+@with_timeout(TOOL_TIMEOUT)
 def get_table_schema(table_name: str, database_name: str | None = None) -> str:
     """Get the full schema (columns) for a specific table.
 
@@ -264,7 +238,7 @@ def get_table_schema(table_name: str, database_name: str | None = None) -> str:
 
 
 @mcp.tool()
-@with_timeout()
+@with_timeout(TOOL_TIMEOUT)
 def list_partition_keys(table_name: str, database_name: str | None = None) -> str:
     """List partition keys for a table. Essential for optimizing Spectrum queries.
 
@@ -313,15 +287,13 @@ def list_partition_keys(table_name: str, database_name: str | None = None) -> st
         results.append(f"  - {row['column_name']}: {row['data_type']}")
 
     results.append("")
-    results.append(
-        "TIP: Always include these columns in your WHERE clause to avoid full S3 scans!"
-    )
+    results.append("TIP: Always include these columns in your WHERE clause to avoid full S3 scans!")
 
     return "\n".join(results)
 
 
 @mcp.tool()
-@with_timeout()
+@with_timeout(TOOL_TIMEOUT)
 def get_schema_mapping(glue_database: str | None = None) -> str:
     """Get the mapping between Glue databases and Redshift external schemas.
 
@@ -369,7 +341,7 @@ def get_schema_mapping(glue_database: str | None = None) -> str:
 
 
 @mcp.tool()
-@with_timeout()
+@with_timeout(TOOL_TIMEOUT)
 def find_columns(column_name: str, source: str | None = None) -> str:
     """Find tables containing a specific column name.
 
@@ -413,7 +385,7 @@ def find_columns(column_name: str, source: str | None = None) -> str:
 
 
 @mcp.tool()
-@with_timeout()
+@with_timeout(TOOL_TIMEOUT)
 def list_tables(
     source: str | None = None,
     database_name: str | None = None,

@@ -1,6 +1,7 @@
 from unittest.mock import MagicMock
 
 import pytest
+import redshift_connector
 
 import mcp_query
 
@@ -115,7 +116,7 @@ class TestValidateWithExplain:
 
     def test_raises_on_explain_failure(self):
         mock_cursor = MagicMock()
-        mock_cursor.execute.side_effect = Exception("syntax error")
+        mock_cursor.execute.side_effect = redshift_connector.ProgrammingError("syntax error")
         mock_conn = MagicMock()
         mock_conn.cursor.return_value = mock_cursor
 
@@ -146,5 +147,3 @@ class TestCreateRedshiftConnection:
 
         result = mcp_query._create_redshift_connection()
         assert result is mock_conn
-
-

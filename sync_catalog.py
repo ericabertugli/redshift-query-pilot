@@ -16,14 +16,15 @@ SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS tables (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     source TEXT NOT NULL,
-    database_name TEXT NOT NULL,
+    database_name TEXT,
+    schema_name TEXT NOT NULL DEFAULT '',
     table_name TEXT NOT NULL,
     table_type TEXT,
     location TEXT,
     storage_format TEXT,
     description TEXT,
     last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(source, database_name, table_name)
+    UNIQUE(source, database_name, schema_name, table_name)
 );
 
 CREATE TABLE IF NOT EXISTS columns (
@@ -47,7 +48,7 @@ CREATE TABLE IF NOT EXISTS schema_mappings (
     UNIQUE(glue_database, redshift_schema)
 );
 
-CREATE INDEX IF NOT EXISTS idx_tables_lookup ON tables(database_name, table_name);
+CREATE INDEX IF NOT EXISTS idx_tables_lookup ON tables(database_name, schema_name, table_name);
 CREATE INDEX IF NOT EXISTS idx_columns_table ON columns(table_id);
 CREATE INDEX IF NOT EXISTS idx_schema_mappings_glue ON schema_mappings(glue_database);
 """
@@ -77,21 +78,36 @@ def detect_storage_format(table_def):
 
 
 def init_db(db_path):
-    """Initialize SQLite database with schema."""
+    """Initialize SQLite database with schema and migrate if needed."""
     conn = sqlite3.connect(db_path)
     conn.execute("PRAGMA foreign_keys = ON")
     conn.executescript(SCHEMA_SQL)
+    _migrate_tables_schema(conn)
     return conn
 
 
-def sync_glue(conn, database):
+def _migrate_tables_schema(conn):
+    """Migrate tables table from old (source, database_name) to (source, database_name, schema_name)."""
+    cursor = conn.execute("PRAGMA table_info(tables)")
+    existing = {row[1] for row in cursor.fetchall()}
+
+    if "schema_name" not in existing:
+        conn.execute("ALTER TABLE tables ADD COLUMN schema_name TEXT NOT NULL DEFAULT ''")
+        existing.add("schema_name")
+
+    if "schema_name" in existing:
+        conn.execute("UPDATE tables SET schema_name = database_name WHERE schema_name = '' AND database_name != '' AND database_name IS NOT NULL")
+        conn.execute("UPDATE tables SET database_name = NULL WHERE source = 'glue' AND database_name != '' AND database_name IS NOT NULL")
+
+
+def sync_glue(conn, glue_database):
     """Sync all table schemas from AWS Glue."""
-    logger.info("Starting Glue sync for database: %s", database)
+    logger.info("Starting Glue sync for database: %s", glue_database)
     client = boto3.client("glue")
 
     tables_data = []
     paginator = client.get_paginator("get_tables")
-    for page in paginator.paginate(DatabaseName=database):
+    for page in paginator.paginate(DatabaseName=glue_database):
         for table_def in page["TableList"]:
             try:
                 sd = table_def.get("StorageDescriptor", {})
@@ -129,7 +145,7 @@ def sync_glue(conn, database):
                     )
 
                 tables_data.append(table_info)
-                logger.debug("Fetched Glue table: %s.%s", database, table_info["name"])
+                logger.debug("Fetched Glue table: %s.%s", glue_database, table_info["name"])
             except (KeyError, TypeError, sqlite3.Error):
                 logger.warning(
                     "Failed to process Glue table: %s",
@@ -138,15 +154,19 @@ def sync_glue(conn, database):
                 )
 
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM columns WHERE table_id IN (SELECT id FROM tables WHERE source = 'glue')")
-    cursor.execute("DELETE FROM tables WHERE source = 'glue'")
+    cursor.execute(
+        "DELETE FROM columns WHERE table_id IN (SELECT id FROM tables WHERE source = 'glue' AND schema_name = ?)",
+        (glue_database,),
+    )
+    cursor.execute("DELETE FROM tables WHERE source = 'glue' AND schema_name = ?", (glue_database,))
 
     for table_info in tables_data:
         cursor.execute(
-            """INSERT INTO tables (source, database_name, table_name, table_type, location, storage_format, description)
-               VALUES ('glue', ?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO tables (source, database_name, schema_name, table_name, table_type, location, storage_format, description)
+               VALUES ('glue', ?, ?, ?, ?, ?, ?, ?)""",
             (
-                database,
+                None,
+                glue_database,
                 table_info["name"],
                 table_info["table_type"],
                 table_info["location"],
@@ -228,16 +248,19 @@ def sync_redshift(conn, host, cluster, database, db_user, region, login_url, pas
         )
 
     db_cursor = conn.cursor()
-    db_cursor.execute("DELETE FROM columns WHERE table_id IN (SELECT id FROM tables WHERE source = 'redshift')")
-    db_cursor.execute("DELETE FROM tables WHERE source = 'redshift'")
+    db_cursor.execute(
+        "DELETE FROM columns WHERE table_id IN (SELECT id FROM tables WHERE source = 'redshift' AND database_name = ?)",
+        (database,),
+    )
+    db_cursor.execute("DELETE FROM tables WHERE source = 'redshift' AND database_name = ?", (database,))
 
     count = 0
     for schema, table_name, table_type in rs_tables:
         try:
             db_cursor.execute(
-                """INSERT INTO tables (source, database_name, table_name, table_type)
-                   VALUES ('redshift', ?, ?, ?)""",
-                (schema, table_name, table_type),
+                """INSERT INTO tables (source, database_name, schema_name, table_name, table_type)
+                   VALUES ('redshift', ?, ?, ?, ?)""",
+                (database, schema, table_name, table_type),
             )
             table_id = db_cursor.lastrowid
             for col in columns_by_table.get((schema, table_name), []):
@@ -289,10 +312,10 @@ def main():
     parser.add_argument("--skip-glue", action="store_true", help="Skip Glue sync")
     parser.add_argument("--skip-redshift", action="store_true", help="Skip Redshift sync")
     parser.add_argument("-v", "--verbose", action="store_true", help="Enable debug logging")
-    parser.add_argument("--glue-database", help="Glue database name (required unless --skip-glue)")
+    parser.add_argument("--glue-database", nargs="+", help="Glue database name(s) (required unless --skip-glue)")
     parser.add_argument("--redshift-host", help="Redshift host (required unless --skip-redshift)")
     parser.add_argument("--redshift-cluster", help="Redshift cluster identifier (required unless --skip-redshift)")
-    parser.add_argument("--redshift-database", help="Redshift database name (required unless --skip-redshift)")
+    parser.add_argument("--redshift-database", nargs="+", help="Redshift database name(s) (required unless --skip-redshift)")
     parser.add_argument("--redshift-user", help="Redshift db_user (required unless --skip-redshift)")
     parser.add_argument("--redshift-region", default="eu-west-1", help="AWS region (default: eu-west-1)")
     # Auth approach 1 (SAML): --redshift-login-url triggers browser-based IdP auth
@@ -333,19 +356,21 @@ def main():
 
     with closing(init_db(args.output)) as conn:
         if not args.skip_glue:
-            sync_glue(conn, args.glue_database)
+            for glue_db in args.glue_database:
+                sync_glue(conn, glue_db)
         if not args.skip_redshift:
-            sync_redshift(
-                conn,
-                args.redshift_host,
-                args.redshift_cluster,
-                args.redshift_database,
-                args.redshift_user,
-                args.redshift_region,
-                args.redshift_login_url,
-                args.redshift_password,
-                args.saml_timeout,
-            )
+            for rs_db in args.redshift_database:
+                sync_redshift(
+                    conn,
+                    args.redshift_host,
+                    args.redshift_cluster,
+                    rs_db,
+                    args.redshift_user,
+                    args.redshift_region,
+                    args.redshift_login_url,
+                    args.redshift_password,
+                    args.saml_timeout,
+                )
 
     logger.info("Catalog written to %s", args.output)
 

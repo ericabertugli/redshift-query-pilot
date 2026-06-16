@@ -32,14 +32,14 @@ def sample_catalog(temp_db):
     with closing(sqlite3.connect(temp_db)) as conn:
         conn.row_factory = sqlite3.Row
         conn.executescript("""
-        INSERT INTO tables (source, database_name, table_name, table_type, storage_format, description)
-        VALUES ('glue', 'analytics_db', 'users', 'EXTERNAL_TABLE', 'Parquet', 'User profiles table');
+        INSERT INTO tables (source, database_name, schema_name, table_name, table_type, storage_format, description)
+        VALUES ('glue', NULL, 'analytics_db', 'users', 'EXTERNAL_TABLE', 'Parquet', 'User profiles table');
 
-        INSERT INTO tables (source, database_name, table_name, table_type)
-        VALUES ('redshift', 'public', 'orders', 'BASE TABLE');
+        INSERT INTO tables (source, database_name, schema_name, table_name, table_type)
+        VALUES ('redshift', 'warehouse', 'public', 'orders', 'BASE TABLE');
 
-        INSERT INTO tables (source, database_name, table_name, table_type, storage_format)
-        VALUES ('glue', 'analytics_db', 'events', 'EXTERNAL_TABLE', 'JSON');
+        INSERT INTO tables (source, database_name, schema_name, table_name, table_type, storage_format)
+        VALUES ('glue', NULL, 'analytics_db', 'events', 'EXTERNAL_TABLE', 'JSON');
 
         INSERT INTO columns (table_id, column_name, data_type, ordinal_position, is_partition_key, comment)
         VALUES (1, 'user_id', 'int', 1, 0, 'unique user id');
@@ -68,11 +68,11 @@ def sample_catalog(temp_db):
         INSERT INTO schema_mappings (glue_database, redshift_schema, region)
         VALUES ('analytics_db', 'analytics', 'eu-west-1');
 
-        INSERT INTO table_descriptions (table_name, source_file, description)
-        VALUES ('users', 'dbt-docs.yml', 'User profiles with PII data');
+        INSERT INTO table_descriptions (database_name, schema_name, table_name, source_file, description)
+        VALUES ('', 'analytics_db', 'users', 'dbt-docs.yml', 'User profiles with PII data');
 
-        INSERT INTO column_descriptions (table_name, column_name, source_file, description)
-        VALUES ('users', 'email', 'dbt-docs.yml', 'User email address (PII)');
+        INSERT INTO column_descriptions (database_name, schema_name, table_name, column_name, source_file, description)
+        VALUES ('', 'analytics_db', 'users', 'email', 'dbt-docs.yml', 'User email address (PII)');
     """)
         conn.commit()
     return temp_db

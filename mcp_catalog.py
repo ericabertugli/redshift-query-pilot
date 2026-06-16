@@ -35,7 +35,7 @@ def search_tables(keyword: str, source: str | None = None) -> str:
     """
     with get_db() as conn:
         query = """
-            SELECT source, database_name, table_name, table_type, storage_format, location
+            SELECT source, database_name, schema_name, table_name, table_type, storage_format, location
             FROM tables
             WHERE table_name LIKE ?
         """
@@ -55,7 +55,8 @@ def search_tables(keyword: str, source: str | None = None) -> str:
 
     results = []
     for row in rows:
-        line = f"[{row['source']}] {row['database_name']}.{row['table_name']}"
+        display_db = row['schema_name'] or row['database_name'] or '?'
+        line = f"[{row['source']}] {display_db}.{row['table_name']}"
         if row["table_type"]:
             line += f" ({row['table_type']})"
         if row["storage_format"]:
@@ -74,7 +75,7 @@ def _get_knowledge_table_descs(conn, table_name: str, exact: bool = True) -> lis
         op = _SQL_OPS[op_key]
         val = table_name if exact else f"%{table_name}%"
         cursor = conn.execute(
-            f"SELECT source_file, description FROM table_descriptions WHERE table_name {op} ? ORDER BY source_file",
+            f"SELECT database_name, schema_name, source_file, description FROM table_descriptions WHERE table_name {op} ? ORDER BY source_file",
             (val,),
         )
         return [dict(row) for row in cursor.fetchall()]
@@ -88,7 +89,7 @@ def _get_knowledge_col_descs(conn, table_name: str, exact: bool = True) -> dict[
         op = _SQL_OPS[op_key]
         val = table_name if exact else f"%{table_name}%"
         cursor = conn.execute(
-            f"""SELECT column_name, source_file, description
+            f"""SELECT column_name, source_file, description, database_name, schema_name
                   FROM column_descriptions
                  WHERE table_name {op} ?
               ORDER BY column_name, source_file""",
@@ -127,11 +128,20 @@ def get_field_descriptions(table_name: str, column_name: str | None = None) -> s
         if table_descs:
             results.append(f"=== Table descriptions for '*{table_name}*' ===")
             for row in table_descs:
-                results.append(f"  [{row['source_file']}] {row['description']}")
+                ctx = ""
+                parts = []
+                if row.get("database_name"):
+                    parts.append(row["database_name"])
+                if row.get("schema_name"):
+                    parts.append(row["schema_name"])
+                if parts:
+                    ctx = f" ({'.'.join(parts)})"
+                results.append(f"  [{row['source_file']}]{ctx} {row['description']}")
             results.append("")
 
         try:
-            col_query = """SELECT column_name, source_file, description FROM column_descriptions
+            col_query = """SELECT column_name, source_file, description, database_name, schema_name
+                           FROM column_descriptions
                            WHERE table_name LIKE ?"""
             params: list[str] = [f"%{table_name}%"]
             if column_name:
@@ -151,7 +161,15 @@ def get_field_descriptions(table_name: str, column_name: str | None = None) -> s
                 if row["column_name"] != current_col:
                     current_col = row["column_name"]
                     results.append(f"\n  {current_col}:")
-                results.append(f"    [{row['source_file']}] {row['description']}")
+                ctx = ""
+                parts = []
+                if row["database_name"]:
+                    parts.append(row["database_name"])
+                if row["schema_name"]:
+                    parts.append(row["schema_name"])
+                if parts:
+                    ctx = f" ({'.'.join(parts)})"
+                results.append(f"    [{row['source_file']}]{ctx} {row['description']}")
 
     if not results:
         return f"No knowledge descriptions found for '{table_name}'"
@@ -161,12 +179,13 @@ def get_field_descriptions(table_name: str, column_name: str | None = None) -> s
 
 @mcp.tool()
 @with_timeout(TOOL_TIMEOUT)
-def get_table_schema(table_name: str, database_name: str | None = None) -> str:
+def get_table_schema(table_name: str, database_name: str | None = None, schema_name: str | None = None) -> str:
     """Get the full schema (columns) for a specific table.
 
     Args:
         table_name: Name of the table
-        database_name: Optional database/schema name to disambiguate
+        database_name: Optional database name to disambiguate
+        schema_name: Optional schema name to disambiguate
 
     Returns:
         Table metadata and list of columns with types and attributes
@@ -177,6 +196,9 @@ def get_table_schema(table_name: str, database_name: str | None = None) -> str:
         if database_name:
             query += " AND database_name = ?"
             params.append(database_name)
+        if schema_name:
+            query += " AND schema_name = ?"
+            params.append(schema_name)
 
         cursor = conn.execute(query, params)
         tables = cursor.fetchall()
@@ -186,7 +208,8 @@ def get_table_schema(table_name: str, database_name: str | None = None) -> str:
 
         results = []
         for table in tables:
-            header = f"=== [{table['source']}] {table['database_name']}.{table['table_name']} ==="
+            display_db = table['schema_name'] or table['database_name'] or '?'
+            header = f"=== [{table['source']}] {display_db}.{table['table_name']} ==="
             results.append(header)
 
             if table["description"]:
@@ -225,13 +248,29 @@ def get_table_schema(table_name: str, database_name: str | None = None) -> str:
             if table_descs:
                 results.append("Table descriptions:")
                 for row in table_descs:
-                    results.append(f"  [{row['source_file']}] {row['description']}")
+                    ctx = ""
+                    parts = []
+                    if row.get("database_name"):
+                        parts.append(row["database_name"])
+                    if row.get("schema_name"):
+                        parts.append(row["schema_name"])
+                    if parts:
+                        ctx = f" ({'.'.join(parts)})"
+                    results.append(f"  [{row['source_file']}]{ctx} {row['description']}")
                 results.append("")
             if col_descs:
                 results.append("Column descriptions:")
                 for col_name, descs in col_descs.items():
                     for d in descs:
-                        results.append(f"  {col_name}: [{d['source_file']}] {d['description']}")
+                        ctx = ""
+                        parts = []
+                        if d.get("database_name"):
+                            parts.append(d["database_name"])
+                        if d.get("schema_name"):
+                            parts.append(d["schema_name"])
+                        if parts:
+                            ctx = f" ({'.'.join(parts)})"
+                        results.append(f"  {col_name}: [{d['source_file']}]{ctx} {d['description']}")
                 results.append("")
 
     return "\n".join(results)
@@ -239,12 +278,13 @@ def get_table_schema(table_name: str, database_name: str | None = None) -> str:
 
 @mcp.tool()
 @with_timeout(TOOL_TIMEOUT)
-def list_partition_keys(table_name: str, database_name: str | None = None) -> str:
+def list_partition_keys(table_name: str, database_name: str | None = None, schema_name: str | None = None) -> str:
     """List partition keys for a table. Essential for optimizing Spectrum queries.
 
     Args:
         table_name: Name of the table
-        database_name: Optional database/schema name to disambiguate
+        database_name: Optional database name to disambiguate
+        schema_name: Optional schema name to disambiguate
 
     Returns:
         List of partition key columns with their data types
@@ -260,6 +300,9 @@ def list_partition_keys(table_name: str, database_name: str | None = None) -> st
         if database_name:
             query += " AND t.database_name = ?"
             params.append(database_name)
+        if schema_name:
+            query += " AND t.schema_name = ?"
+            params.append(schema_name)
 
         query += " ORDER BY c.ordinal_position"
 
@@ -354,7 +397,7 @@ def find_columns(column_name: str, source: str | None = None) -> str:
     """
     with get_db() as conn:
         query = """
-            SELECT t.source, t.database_name, t.table_name, c.column_name, c.data_type, c.is_partition_key
+            SELECT t.source, t.database_name, t.schema_name, t.table_name, c.column_name, c.data_type, c.is_partition_key
             FROM columns c
             JOIN tables t ON c.table_id = t.id
             WHERE c.column_name LIKE ?
@@ -376,8 +419,9 @@ def find_columns(column_name: str, source: str | None = None) -> str:
     results = []
     for row in rows:
         partition = " [PK]" if row["is_partition_key"] else ""
+        display_db = row['schema_name'] or row['database_name'] or '?'
         results.append(
-            f"[{row['source']}] {row['database_name']}.{row['table_name']}."
+            f"[{row['source']}] {display_db}.{row['table_name']}."
             f"{row['column_name']}: {row['data_type']}{partition}"
         )
 
@@ -389,6 +433,7 @@ def find_columns(column_name: str, source: str | None = None) -> str:
 def list_tables(
     source: str | None = None,
     database_name: str | None = None,
+    schema_name: str | None = None,
     limit: int = 50,
     offset: int = 0,
 ) -> str:
@@ -399,7 +444,8 @@ def list_tables(
 
     Args:
         source: Optional filter by source ('glue' for Spectrum, 'redshift' for internal tables)
-        database_name: Optional filter by database/schema name
+        database_name: Optional filter by database name
+        schema_name: Optional filter by schema name
         limit: Maximum number of tables to return (max 200, default 50)
         offset: Number of tables to skip for pagination (default 0)
 
@@ -410,7 +456,7 @@ def list_tables(
     with get_db() as conn:
         count_query = "SELECT COUNT(*) AS total FROM tables WHERE 1=1"
         data_query = """
-            SELECT source, database_name, table_name, table_type, storage_format, location
+            SELECT source, database_name, schema_name, table_name, table_type, storage_format, location
             FROM tables WHERE 1=1
         """
         params: list[str | int] = []
@@ -426,6 +472,12 @@ def list_tables(
             count_query += clause
             data_query += clause
             params.append(database_name)
+
+        if schema_name:
+            clause = " AND schema_name = ?"
+            count_query += clause
+            data_query += clause
+            params.append(schema_name)
 
         limit = min(max(limit, 1), 200)
 
@@ -451,7 +503,8 @@ def list_tables(
         "",
     ]
     for row in rows:
-        line = f"[{row['source']}] {row['database_name']}.{row['table_name']}"
+        display_db = row['schema_name'] or row['database_name'] or '?'
+        line = f"[{row['source']}] {display_db}.{row['table_name']}"
         if row["table_type"]:
             line += f" ({row['table_type']})"
         if row["storage_format"]:

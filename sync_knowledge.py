@@ -25,22 +25,24 @@ KNOWLEDGE_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS table_descriptions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     database_name TEXT NOT NULL DEFAULT '',
+    schema_name TEXT NOT NULL DEFAULT '',
     table_name TEXT NOT NULL,
     source_file TEXT NOT NULL,
     description TEXT NOT NULL,
     last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(database_name, table_name, source_file)
+    UNIQUE(schema_name, table_name, source_file)
 );
 
 CREATE TABLE IF NOT EXISTS column_descriptions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     database_name TEXT NOT NULL DEFAULT '',
+    schema_name TEXT NOT NULL DEFAULT '',
     table_name TEXT NOT NULL,
     column_name TEXT NOT NULL,
     source_file TEXT NOT NULL,
     description TEXT NOT NULL,
     last_synced TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(database_name, table_name, column_name, source_file)
+    UNIQUE(schema_name, table_name, column_name, source_file)
 );
 
 CREATE INDEX IF NOT EXISTS idx_table_desc_lookup
@@ -79,11 +81,12 @@ def _parse_yaml_file(path: Path, rel_path: str) -> tuple[list[tuple], list[tuple
         if not table_name:
             continue
 
-        db_name = table.get("database") or ""
+        database_name = table.get("database") or ""
+        schema_name = table.get("schema") or ""
         table_desc = (table.get("description") or "").strip()
 
         if table_desc:
-            table_rows.append((db_name, table_name, rel_path, table_desc))
+            table_rows.append((database_name, schema_name, table_name, rel_path, table_desc))
 
         for col in table.get("columns") or []:
             if not isinstance(col, dict):
@@ -91,9 +94,32 @@ def _parse_yaml_file(path: Path, rel_path: str) -> tuple[list[tuple], list[tuple
             col_name = col.get("name") or ""
             col_desc = (col.get("description") or "").strip()
             if col_name and col_desc:
-                col_rows.append((db_name, table_name, col_name, rel_path, col_desc))
+                col_rows.append((database_name, schema_name, table_name, col_name, rel_path, col_desc))
 
     return table_rows, col_rows
+
+
+def _migrate_knowledge_schema(conn):
+    """Migrate knowledge tables for schema evolution (database_name→schema_name, add new database_name)."""
+    cursor = conn.execute("PRAGMA table_info(table_descriptions)")
+    td_cols = {row[1] for row in cursor.fetchall()}
+    if "database_name" in td_cols and "schema_name" not in td_cols:
+        conn.execute("ALTER TABLE table_descriptions RENAME COLUMN database_name TO schema_name")
+
+    cursor = conn.execute("PRAGMA table_info(table_descriptions)")
+    td_cols = {row[1] for row in cursor.fetchall()}
+    if "database_name" not in td_cols:
+        conn.execute("ALTER TABLE table_descriptions ADD COLUMN database_name TEXT NOT NULL DEFAULT ''")
+
+    cursor = conn.execute("PRAGMA table_info(column_descriptions)")
+    cd_cols = {row[1] for row in cursor.fetchall()}
+    if "database_name" in cd_cols and "schema_name" not in cd_cols:
+        conn.execute("ALTER TABLE column_descriptions RENAME COLUMN database_name TO schema_name")
+
+    cursor = conn.execute("PRAGMA table_info(column_descriptions)")
+    cd_cols = {row[1] for row in cursor.fetchall()}
+    if "database_name" not in cd_cols:
+        conn.execute("ALTER TABLE column_descriptions ADD COLUMN database_name TEXT NOT NULL DEFAULT ''")
 
 
 def sync_knowledge(db_path: str = str(DB_PATH)) -> tuple[int, int]:
@@ -105,6 +131,7 @@ def sync_knowledge(db_path: str = str(DB_PATH)) -> tuple[int, int]:
     with closing(sqlite3.connect(db_path, timeout=10.0)) as conn:
         conn.row_factory = sqlite3.Row
         conn.executescript(KNOWLEDGE_SCHEMA_SQL)
+        _migrate_knowledge_schema(conn)
 
         now = _now_iso()
         table_count = 0
@@ -114,27 +141,27 @@ def sync_knowledge(db_path: str = str(DB_PATH)) -> tuple[int, int]:
             rel_path = yml_file.name
             table_rows, col_rows = _parse_yaml_file(yml_file, rel_path)
 
-            for db_name, table_name, src_file, desc in table_rows:
+            for database_name, schema_name, table_name, src_file, desc in table_rows:
                 conn.execute(
                     """INSERT INTO table_descriptions
-                       (database_name, table_name, source_file, description, last_synced)
-                       VALUES (?, ?, ?, ?, ?)
-                       ON CONFLICT(database_name, table_name, source_file)
+                       (database_name, schema_name, table_name, source_file, description, last_synced)
+                       VALUES (?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(schema_name, table_name, source_file)
                        DO UPDATE SET description=excluded.description,
-                                      last_synced=excluded.last_synced""",
-                    (db_name, table_name, src_file, desc, now),
+                                       last_synced=excluded.last_synced""",
+                    (database_name, schema_name, table_name, src_file, desc, now),
                 )
                 table_count += 1
 
-            for db_name, table_name, col_name, src_file, desc in col_rows:
+            for database_name, schema_name, table_name, col_name, src_file, desc in col_rows:
                 conn.execute(
                     """INSERT INTO column_descriptions
-                       (database_name, table_name, column_name, source_file, description, last_synced)
-                       VALUES (?, ?, ?, ?, ?, ?)
-                       ON CONFLICT(database_name, table_name, column_name, source_file)
+                       (database_name, schema_name, table_name, column_name, source_file, description, last_synced)
+                       VALUES (?, ?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(schema_name, table_name, column_name, source_file)
                        DO UPDATE SET description=excluded.description,
-                                      last_synced=excluded.last_synced""",
-                    (db_name, table_name, col_name, src_file, desc, now),
+                                       last_synced=excluded.last_synced""",
+                    (database_name, schema_name, table_name, col_name, src_file, desc, now),
                 )
                 col_count += 1
 

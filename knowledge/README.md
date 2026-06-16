@@ -9,7 +9,9 @@ Multiple files can describe the same table or column. When they do, all descript
 ```yaml
 tables:
   - name: orders                    # required — table name
-    database: my_glue_db            # optional — for disambiguation
+    database: warehouse             # optional — database name for multi-DB disambiguation
+    schema: my_glue_schema          # optional — for disambiguation
+                                    # dbt extraction populates this from the schema name
     description: >                  # optional — table-level description
       Main orders table. One row per order placed by a client.
     columns:                        # optional

@@ -19,7 +19,7 @@ class TestParseYamlFile:
             "tables": [
                 {
                     "name": "users",
-                    "database": "analytics_db",
+                    "schema": "analytics_db",
                     "description": "User profile data",
                     "columns": [
                         {"name": "user_id", "description": "Unique identifier"},
@@ -35,11 +35,11 @@ class TestParseYamlFile:
 
         assert len(table_rows) == 1
         assert len(col_rows) == 2
-        assert table_rows[0] == ("analytics_db", "users", "knowledge.yml", "User profile data")
-        assert col_rows[0] == ("analytics_db", "users", "user_id", "knowledge.yml", "Unique identifier")
+        assert table_rows[0] == ("", "analytics_db", "users", "knowledge.yml", "User profile data")
+        assert col_rows[0] == ("", "analytics_db", "users", "user_id", "knowledge.yml", "Unique identifier")
 
     def test_skips_table_without_description(self, tmp_path):
-        content = {"tables": [{"name": "users", "database": "analytics_db"}]}
+        content = {"tables": [{"name": "users", "schema": "analytics_db"}]}
         p = tmp_path / "no_desc.yml"
         p.write_text(yaml.dump(content))
 
@@ -48,7 +48,7 @@ class TestParseYamlFile:
         assert len(col_rows) == 0
 
     def test_skips_table_without_name(self, tmp_path):
-        content = {"tables": [{"database": "analytics_db", "description": "desc"}]}
+        content = {"tables": [{"schema": "analytics_db", "description": "desc"}]}
         p = tmp_path / "no_name.yml"
         p.write_text(yaml.dump(content))
 
@@ -116,8 +116,8 @@ class TestParseYamlFile:
         p.write_text(yaml.dump(content))
 
         table_rows, col_rows = _parse_yaml_file(p, "padded.yml")
-        assert table_rows[0][3] == "padded desc"
-        assert col_rows[0][4] == "padded"
+        assert table_rows[0][4] == "padded desc"
+        assert col_rows[0][5] == "padded"
 
 
 class TestSyncKnowledge:
@@ -126,7 +126,7 @@ class TestSyncKnowledge:
             "tables": [
                 {
                     "name": "users",
-                    "database": "analytics",
+                    "schema": "analytics",
                     "description": "User table",
                     "columns": [{"name": "id", "description": "Primary key"}],
                 }
@@ -141,11 +141,11 @@ class TestSyncKnowledge:
 
         conn = sqlite3.connect(temp_db)
         td = conn.execute("SELECT * FROM table_descriptions").fetchone()
-        assert td[2] == "users"
-        assert td[4] == "User table"
+        assert td[3] == "users"
+        assert td[5] == "User table"
         cd = conn.execute("SELECT * FROM column_descriptions").fetchone()
-        assert cd[3] == "id"
-        assert cd[5] == "Primary key"
+        assert cd[4] == "id"
+        assert cd[6] == "Primary key"
         conn.close()
 
     def test_multiple_yaml_files(self, temp_db, tmp_path, monkeypatch):

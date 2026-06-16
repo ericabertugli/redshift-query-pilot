@@ -48,11 +48,17 @@ class TestGetTableSchema:
         assert "not found" in result.lower()
 
     def test_with_database_name(self):
-        result = mcp_catalog.get_table_schema(table_name="users", database_name="analytics_db")
-        assert "[glue] analytics_db.users" in result
+        result = mcp_catalog.get_table_schema(table_name="orders", database_name="warehouse")
+        assert "[redshift]" in result
+        assert "public.orders" in result
+
+    def test_with_schema_name(self):
+        result = mcp_catalog.get_table_schema(table_name="orders", schema_name="public")
+        assert "[redshift]" in result
+        assert "public.orders" in result
 
     def test_with_wrong_database_returns_not_found(self):
-        result = mcp_catalog.get_table_schema(table_name="users", database_name="wrong_db")
+        result = mcp_catalog.get_table_schema(table_name="orders", database_name="wrong_db")
         assert "not found" in result.lower()
 
 
@@ -71,7 +77,11 @@ class TestListPartitionKeys:
         assert "not found" in result.lower()
 
     def test_with_database_name(self):
-        result = mcp_catalog.list_partition_keys(table_name="users", database_name="analytics_db")
+        result = mcp_catalog.list_partition_keys(table_name="orders", database_name="warehouse")
+        assert "no partition keys" in result.lower()
+
+    def test_with_schema_name(self):
+        result = mcp_catalog.list_partition_keys(table_name="users", schema_name="analytics_db")
         assert "dt" in result
 
 
@@ -154,6 +164,7 @@ class TestListTables:
         assert "[glue] analytics_db.users" in result
         assert "[redshift] public.orders" in result
         assert "[glue] analytics_db.events" in result
+        assert "warehouse" not in result
 
     def test_with_source_filter(self):
         result = mcp_catalog.list_tables(source="glue")
@@ -162,10 +173,15 @@ class TestListTables:
         assert "[redshift]" not in result
 
     def test_with_database_filter(self):
-        result = mcp_catalog.list_tables(database_name="analytics_db")
+        result = mcp_catalog.list_tables(database_name="warehouse")
+        assert "1 of 1" in result
+        assert "public.orders" in result
+
+    def test_with_schema_filter(self):
+        result = mcp_catalog.list_tables(schema_name="analytics_db")
         assert "2 of 2" in result
-        assert "analytics_db" in result
-        assert "public" not in result
+        assert "analytics_db.users" in result
+        assert "analytics_db.events" in result
 
     def test_no_match(self):
         result = mcp_catalog.list_tables(source="glue", database_name="ghost")

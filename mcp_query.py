@@ -9,7 +9,7 @@ import redshift_connector
 from mcp.server.fastmcp import FastMCP
 
 from redshift_conn import connect_password, connect_saml
-from timeout import with_timeout
+from timeout import ToolTimeoutError, with_timeout
 
 RS_HOST = os.environ.get("REDSHIFT_HOST", "")
 RS_CLUSTER = os.environ.get("REDSHIFT_CLUSTER", "")
@@ -96,6 +96,12 @@ def _close_redshift_connection():
         _redshift_conn = None
 
 
+def _set_statement_timeout(conn):
+    """Set Redshift statement_timeout so queries are killed at the DB level."""
+    with conn.cursor() as cursor:
+        cursor.execute(f"SET statement_timeout = '{RS_QUERY_TIMEOUT * 1000}'")
+
+
 def _validate_sql(sql: str) -> None:
     if not _ALLOWED_SQL_RE.match(sql):
         raise ValueError(
@@ -117,6 +123,7 @@ def _validate_with_explain(conn, sql: str) -> None:
     with closing(conn.cursor()) as cursor:
         try:
             cursor.execute(f"EXPLAIN {sql}")
+            cursor.fetchall()
         except redshift_connector.Error as e:
             raise ValueError(f"SQL validation failed: {e}")
 
@@ -176,6 +183,7 @@ def run_query(sql: str, max_rows: int | None = None) -> str:
     row_limit = min(max_rows or RS_MAX_ROWS, 5000)
 
     conn = _get_redshift_connection()
+    _set_statement_timeout(conn)
     _validate_with_explain(conn, sql)
     with closing(conn.cursor()) as cursor:
         try:
@@ -193,7 +201,7 @@ def run_query(sql: str, max_rows: int | None = None) -> str:
 
             conn.commit()
             return _format_results(columns, rows, truncated)
-        except redshift_connector.Error:
+        except (redshift_connector.Error, ToolTimeoutError):
             _close_redshift_connection()
             raise
 
